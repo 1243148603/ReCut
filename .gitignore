@@ -1,0 +1,35 @@
+# Recut / D:\Map 版本控制边界
+#
+# 关键：本文件必须在第一次 `git add` 之前就位。
+# data/ 下有 223,495 个瓦片文件加 1.38 GB 的 DEM 分幅；一旦这些文件处于
+# "未跟踪且未被忽略"的状态，`git status` 会把它们全部走一遍，耗时到不可用。
+#
+# 判断标准是「能不能重建」，不是「大不大」：
+#   能重建的           -> 忽略（data/、logs/、__pycache__/）
+#   重建不了的证据留档 -> 必须进仓库（baseline/、ctb/）
+
+# --- 数据：可由 01_download.sh 与 03_gdalwarp_mosaic.cmd 重建 -------------
+# data/inputs/dem/      30 幅 Copernicus GLO-30 分幅，约 1.38 GB
+# data/outputs/terrain_tif/  chongqing_dem.tif 与它的 VRT，各约 1.09 GB
+# data/outputs/cesium_terrain/  223,495 个 .terrain 瓦片，约 1.29 GB
+data/
+
+# --- 运行产物 --------------------------------------------------------------
+logs/
+recut/_work/
+
+# --- Python ----------------------------------------------------------------
+__pycache__/
+*.py[cod]
+
+# --- 编辑器 / 系统 ---------------------------------------------------------
+.vscode/
+.idea/
+.claude/
+Thumbs.db
+desktop.ini
+
+# 注意 baseline/ 与 ctb/ 都不在忽略之列。
+#   baseline/ 是 M0-M2 的对拍基准（dem_gdalinfo.json、tile_counts.txt、
+#            golden/、maxzoom_calibration/），丢了就没法验收。
+#   ctb/      是 NFR-02 的交付物，重建需要 VS2022 + conda，不是随手可得。

@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>重庆地形瓦片预览 — D:\Map</title>
+<!-- defer：Cesium.js 有 5 MB，同步加载会把 HTML 解析整个挡住，页面在下载
+     完成前一片空白、也不给任何解释（CDN 慢或被墙时最容易误判成"地形坏了"）。
+     defer 让 body 先建出来，面板可以先显示进度；失败时 onerror 给出明确提示。 -->
+<script defer src="https://cdn.jsdelivr.net/npm/cesium@1.128.0/Build/Cesium/Cesium.js"
+        onerror="window.__cesiumFailed=true"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cesium@1.128.0/Build/Cesium/Widgets/widgets.css">
+<style>
+  html, body, #cesiumContainer { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; }
+  #panel {
+    position: absolute; top: 10px; left: 10px; z-index: 999;
+    background: rgba(0,0,0,.82); color: #eee; font: 12px/1.55 Consolas, monospace;
+    padding: 10px 14px; border-radius: 6px; width: 470px; max-height: 92vh; overflow: auto;
+    white-space: pre-wrap; word-break: break-all;
+  }
+  /* 不带 ?debug=1 时：面板只剩右下角那个垂直夸张滑块，日志区整块不显示，
+     底色/边框也去掉，看起来就是一个干净的 3D 视图。 */
+  #panel.compact {
+    background: none; padding: 0; border-radius: 0; width: 210px;
+    max-height: none; overflow: visible; color: #fff;
+    text-shadow: 0 1px 3px rgba(0,0,0,.9);
+  }
+  #panel.compact #log { display: none; }
+  #panel b { color: #7dd3fc; }
+  .ok   { color: #86efac; }
+  .warn { color: #fde047; }
+  .err  { color: #fca5a5; }
+  .dim  { color: #94a3b8; }
+  #panel label { display: block; margin-top: 7px; color: #cbd5e1; }
+  #panel input[type=range] { width: 100%; }
+  hr { border: 0; border-top: 1px solid #475569; margin: 9px 0; }
+</style>
+</head>
+<body>
+<div id="cesiumContainer"></div>
+<div id="panel"><div id="log">正在加载 Cesium.js（约 5 MB，需联网）…</div></div>
+
+<script>
+// defer 的脚本在 DOMContentLoaded 之前执行，所以这里等 DOMContentLoaded
+// 就一定能拿到已就绪的 Cesium，也不会有解析顺序问题。
+window.addEventListener('DOMContentLoaded', async function () {
+// 诊断面板默认收起，开发时看到的是干净的 3D 视图。排查问题加 ?debug=1 展开：
+// 里面有瓦片探测、请求汇总、数据正确性自检这几样证据。日志照样会写进
+// console，所以不带参数也不会丢信息。
+const DEBUG = new URLSearchParams(location.search).has('debug');
+const panel = document.getElementById('panel');
+const log = document.getElementById('log');
+log.innerHTML = '';
+if (!DEBUG) panel.classList.add('compact');
+
+// ── 配置 ────────────────────────────────────────────────────────────────
+// 与 data/outputs/cesium_terrain/layer.json 保持一致：
+//   bounds [105.3, 28.1, 110.2, 32.2]  ->  中心 107.75E / 30.15N
+//   maxzoom 14
+const TERRAIN_URL = './data/outputs/cesium_terrain/';
+const WORLD_CENTER = { lon: 107.75, lat: 30.15 };
+const MAXZOOM = 14;
+
+// Cesium 会把相对路径解析成绝对 URL 再发请求，所以记录和比较都要用
+// 解析后的绝对形式，否则相对路径 replace 不掉，面板里会是一长串完整 URL。
+const TERRAIN_BASE = new URL(TERRAIN_URL, location.href).href;
+const shorten = (u) => String(u).replace(TERRAIN_BASE, '').replace(location.origin, '');
+
+const say = (msg, cls) => {
+  log.innerHTML += `\n<span class="${cls || ''}">${msg}</span>`;
+  console.log('[terrain]', msg);
+};
+const h = (t) => {
+  log.innerHTML += `\n<hr><b>${t}</b>`;
+  console.log('[terrain] ---', t);
+};
+
+// ── 数据自检（不依赖 Cesium，先跑） ──────────────────────────────────────
+/** 数据正确性自检：把「瓦片里真正存着的高程」和「源 DEM 的高程」对起来。
+ *
+ * 这里刻意不用 globe.getHeight。它只反映相机视野内已经加载的瓦片，视野外的点
+ * 会退回粗层祖先瓦片去插值 —— 实测（2026-09-28，无头 Edge）中部偏西差 309 m、
+ * 黔江差 1017 m。那是渲染状态，不能拿来判断数据对不对。
+ * 改成直接取覆盖该点的 z14 瓦片、解出那一个像素：与相机无关，可重复。
+ *
+ * 参考值由 GDAL 在「该像素中心」的经纬度上取自源 DEM，所以两者指的是同一个
+ * 位置，差值就是重采样保真度（这四点都在 12 m 以内）。
+ *
+ * 放在最前面还有一个原因：这段只碰本机瓦片，不碰 CDN。Cesium 加载失败时，
+ * 页面照样能回答「数据本身对不对」。
+ */
+const TILE_Z = MAXZOOM;   // 14，layer.json 的 maxzoom
+const TILE_N = 65;        // ctb-tile 对 terrain 瓦片的默认尺寸；Cesium 的 heightmapWidth 默认也是 65
+const CHECKS = [
+  // 名称        经度     纬度     源DEM参考值(m)
+  ['中部偏西',  107.75,  30.15,  399.2],
+  ['西北部',    106.25,  31.65,  375.2],
+  ['东北部',    109.45,  31.25,  541.7],
+  ['西南部',    105.55,  28.35,  424.4],
+];
+
+const isGzip = (b) => b.byteLength > 1 &&
+  new Uint8Array(b)[0] === 0x1f && new Uint8Array(b)[1] === 0x8b;
+const gunzip = async (b) =>
+  new Response(new Blob([b]).stream().pipeThrough(new DecompressionStream('gzip')))
+    .arrayBuffer();
+
+/** 取覆盖 (lon,lat) 的瓦片，解出该点像素的高程。 */
+async function decodeTileHeight(lon, lat) {
+  // 地理瓦片（layer.json 没写 projection，按规范默认 EPSG:4326）：
+  // z 层有 2^(z+1) 列、2^z 行。scheme=tms 指 y 自南向北。
+  const nx = 2 ** (TILE_Z + 1), ny = 2 ** TILE_Z;
+  const tx = Math.floor((lon + 180) / 360 * nx);
+  const ty = Math.floor((lat + 90) / 180 * ny);
+  const lon0 = tx / nx * 360 - 180, lat0 = ty / ny * 180 - 90;
+  const px = Math.min(TILE_N - 1, Math.floor((lon - lon0) / (360 / nx) * TILE_N));
+  const py = Math.min(TILE_N - 1, Math.floor((lat - lat0) / (180 / ny) * TILE_N));
+
+  const res = await fetch(`${TERRAIN_BASE}${TILE_Z}/${tx}/${ty}.terrain`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  let buf = await res.arrayBuffer();
+  // .terrain 文件本身是 gzip（CTB 的产物），serve.py 又加了一层
+  // Content-Encoding: gzip。浏览器会解掉响应头声明的那一层，所以这里可能
+  // 还剩一层；万一服务器没声明，就是两层。解到不是 gzip 为止。
+  for (let i = 0; i < 2 && isGzip(buf); i++) buf = await gunzip(buf);
+
+  // 布局（Cesium 源码里的 Q_t）：65×65 个小端 uint16 = 8450 B，
+  // 随后 1 B childTileMask、1 B waterMask（这就是文件 8452 B 的来历）。
+  // 高程 = 原始值 / 5 - 1000（heightmap-1.0 的 heightScale/heightOffset）。
+  const raw = new DataView(buf).getUint16((py * TILE_N + px) * 2, true);
+  return { h: raw / 5 - 1000, tile: `${TILE_Z}/${tx}/${ty}`, px, py };
+}
+
+async function sampleHeights() {
+  h('数据正确性自检：瓦片值 vs 源 DEM');
+  for (const [name, lon, lat, ref] of CHECKS) {
+    try {
+      const r = await decodeTileHeight(lon, lat);
+      const d = r.h - ref;
+      say(`${name}  ${lon}E ${lat}N  ${r.tile} px(${r.px},${r.py})  ` +
+          `瓦片 ${r.h.toFixed(1)} m   源DEM ${ref.toFixed(1)} m   ` +
+          `差 ${d >= 0 ? '+' : ''}${d.toFixed(1)} m`,
+          Math.abs(d) < 20 ? 'ok' : 'warn');
+    } catch (e) {
+      say(`${name}  ${lon}E ${lat}N  解码失败: ${e.message}`, 'err');
+    }
+  }
+  say('差值来自重采样（源 DEM 30 m 网格 → 瓦片 65×65），不是数据错误。', 'dim');
+  say('换任意点也可同法核对：先按上面规则算出瓦片，再与 gdallocationinfo 对照。', 'dim');
+}
+
+await sampleHeights();
+
+// Cesium 加载失败也能走到这里：上面的自检已经把「数据对不对」答完了。
+if (typeof Cesium === 'undefined') {
+  h('Cesium.js 加载失败');
+  say('本页从 cdn.jsdelivr.net 加载 Cesium 1.128（约 5 MB），需要联网。', 'err');
+  say(window.__cesiumFailed ? '脚本请求本身失败了（网络不通或被拦截）。'
+                            : '脚本未能执行。', 'err');
+  say('上面那节自检只读本机瓦片，不受影响 —— 数据本身是好的。', 'ok');
+  say('3D 显示需联网；完全离线的机器可把 Cesium 放到本地再改 <script> 的 src。', 'dim');
+  return;
+}
+
+// ── 关键诊断：记录每个 .terrain 请求的真实状态码和 URL ────────────────────
+// Cesium 的 errorEvent 只给笼统的错误对象、不带 URL，必须自己记才能看清
+// 「到底请求了哪个路径、返回了什么」。
+//
+// 注意必须同时拦 XMLHttpRequest：Cesium 取 arraybuffer（地形瓦片就是）
+// 走的是 XHR，不是 fetch。只拦 fetch 会一条都记不到，面板会谎报
+// 「0 个请求」。fetch 那一路也要留着——探测请求和将来换实现都会用到。
+const tileLog = [];   // {url, status}
+const origFetch = window.fetch;
+
+const logTile = (url, status) => {
+  if (/\.terrain(\?|$)/.test(url)) tileLog.push({ url: shorten(url), status });
+};
+
+window.fetch = function (input, init) {
+  const url = typeof input === 'string' ? input : (input && input.url) || String(input);
+  return origFetch.apply(this, arguments).then((resp) => {
+    logTile(url, resp.status);
+    return resp;
+  }, (err) => {
+    logTile(url, 'NETWORK_FAIL');
+    throw err;
+  });
+};
+
+const xhrOpen = XMLHttpRequest.prototype.open;
+const xhrSend = XMLHttpRequest.prototype.send;
+XMLHttpRequest.prototype.open = function (method, url) {
+  this.__url = url;
+  return xhrOpen.apply(this, arguments);
+};
+XMLHttpRequest.prototype.send = function () {
+  if (/\.terrain(\?|$)/.test(this.__url || '')) {
+    // loadend 在成功、HTTP 错误、网络错误三种情况下都会触发。
+    // 网络层失败时 status 为 0，单独标出来，避免与 404 混淆。
+    this.addEventListener('loadend', () => {
+      logTile(this.__url, this.status || 'NETWORK_FAIL');
+    });
+  }
+  return xhrSend.apply(this, arguments);
+};
+
+function reportTiles() {
+  // 只统计 Cesium 自己发的请求（探测用的是 origFetch，不经过记录）。
+  if (!tileLog.length) {
+    say('Cesium 一个 .terrain 都没请求到 —— provider 未生效，或相机没朝向数据范围。', 'warn');
+    return;
+  }
+  const by = {};
+  tileLog.forEach((t) => { const k = String(t.status); (by[k] = by[k] || []).push(t.url); });
+  say(`瓦片请求 ${tileLog.length} 个：[${Object.keys(by).map((k) => `${k}x${by[k].length}`).join(', ')}]`,
+      by['200'] && by['200'].length ? 'ok' : 'err');
+
+  Object.keys(by).forEach((k) => {
+    const list = by[k];
+    say(`  ${k} -> ${list.slice(0, 6).join(', ')}${list.length > 6 ? ` ...共${list.length}个` : ''}`,
+        k === '200' ? 'dim' : 'err');
+  });
+
+  const ok = (by['200'] || []).length, missing = (by['404'] || []).length;
+  if (ok && !missing) say('所有请求的瓦片都返回 200', 'ok');
+  if (ok && missing)  say(`其中 ${missing} 个 404 属正常：数据范围（bounds）之外的层级本来就没有瓦片。`, 'dim');
+  if (!ok && missing) say('全部 404：Cesium 请求的路径与实际目录结构不匹配。', 'err');
+}
+
+// ── 自检：绕过 Cesium，直接探测已知瓦片 ─────────────────────────────────
+// 这一步能定位最隐蔽的失败模式：瓦片本身是对的，但服务器没声明
+// Content-Encoding: gzip，浏览器就不会解压，Cesium 拿压缩字节去建
+// Uint16Array 会直接抛 RangeError，表现为「200 但地形永远停在 0 级」。
+async function probe() {
+  h('自检：直接探测瓦片');
+  let gzipBug = false;
+
+  const cases = [
+    ['layer.json',     TERRAIN_URL + 'layer.json',              '元数据'],
+    ['0/1/0.terrain',  TERRAIN_URL + '0/1/0.terrain',           'zoom0 应有'],
+    ['0/0/0.terrain',  TERRAIN_URL + '0/0/0.terrain',           'zoom0 不应有，预期 404'],
+    ['14/25968/10752', TERRAIN_URL + '14/25968/10752.terrain',  '最深级'],
+  ];
+
+  for (const [name, url, note] of cases) {
+    try {
+      // cache:'no-store' 保证自检反映的是服务器「此刻」的行为，
+      // 不会命中上一轮遗留的缓存响应（否则修好了也看不出来）。
+      const r = await origFetch(url, { cache: 'no-store' });
+      if (!r.ok) { say(`${r.status}  ${name}  ${note}`, 'warn'); continue; }
+
+      const b = await r.arrayBuffer();
+      const u8 = new Uint8Array(b);
+      const isGzip = u8[0] === 0x1f && u8[1] === 0x8b;
+
+      if (!name.endsWith('.terrain')) {
+        say(`200  ${name}  ${b.byteLength}B  ${note}`, 'ok');
+        continue;
+      }
+      if (isGzip) {
+        // 浏览器把 gzip 原始字节交给了 JS，说明它没有做透明解压 ——
+        // 即响应缺少 Content-Encoding: gzip。这正是渲染失败的原因。
+        gzipBug = true;
+        say(`200  ${name}  ${b.byteLength}B  收到的是 gzip 原始字节  <-- 问题所在`, 'err');
+      } else {
+        say(`200  ${name}  ${b.byteLength}B  已解压  首高度=${u8[0] | (u8[1] << 8)}`, 'ok');
+      }
+    } catch (e) {
+      say(`ERR  ${name}  ${e.message}`, 'err');
+    }
+  }
+
+  if (gzipBug) {
+    h('诊断：瓦片被 gzip 压缩，但服务器没有声明 Content-Encoding');
+    say('ctb-tile 输出的是 gzip 压缩瓦片（CTB README 原文："This creates', 'err');
+    say('gzipped terrain tiles"）。Cesium 不在 JS 里解压，它依赖浏览器', 'err');
+    say('完成透明解压 —— 而这只有当响应带 Content-Encoding: gzip 时才会发生。', 'err');
+    say('于是 Cesium 用 86 字节的压缩流去执行', 'err');
+    say('    new Uint16Array(buffer, 0, 65*65)   // 需要 8450 字节', 'err');
+    say('直接抛 RangeError，瓦片全部加载失败，globe 永远停在 0 级。', 'err');
+    say('', '');
+    say('修法：用本仓库自带的服务器启动，它会带上这个响应头：', 'warn');
+    say('    python serve.py --port 8080', 'warn');
+    say('不要用 python -m http.server：它不会为 .terrain 加该响应头。', 'warn');
+  }
+}
+
+// ── 主流程 ──────────────────────────────────────────────────────────────
+const viewer = new Cesium.Viewer('cesiumContainer', {
+  baseLayer: false,
+  animation: false, timeline: false, baseLayerPicker: false, geocoder: false,
+  sceneModePicker: false, navigationHelpButton: false, fullscreenButton: false,
+  infoBox: false, selectionIndicator: false,
+});
+viewer.scene.verticalExaggeration = 2.0;
+
+async function loadTerrain() {
+  // heightmap-1.0 下 Cesium 会强制 requestWaterMask = true、忽略
+  // requestVertexNormals，所以这两个选项在这里是空转的，不必传。
+  const provider = await Cesium.CesiumTerrainProvider.fromUrl(TERRAIN_URL, {
+    requestWaterMask: true,
+    requestVertexNormals: true,
+  });
+  viewer.scene.terrainProvider = provider;
+  provider.errorEvent.addEventListener((err) => {
+    // Cesium 抛的是 TileProviderError：说明文字在 err.message，底层异常在
+    // err.error（常常是 undefined）。只读 err.error 会打出「undefined」。
+    const msg = (err && (err.message || (err.error && err.error.message))) || String(err);
+    const where = err && err.level !== undefined ? ` @ ${err.level}/${err.x}/${err.y}` : '';
+    const benign = /404|not found|does not exist/i.test(msg);
+    say(`terrain error${where}: ${msg}` + (benign ? '  （数据范围外，正常）' : ''), benign ? 'dim' : 'err');
+  });
+  return provider;
+}
+
+(async function main() {
+  log.innerHTML = `<b>重庆地形瓦片预览</b>\n源: ${TERRAIN_URL}\n` +
+                  `范围 ${WORLD_CENTER.lon}E ${WORLD_CENTER.lat}N  zoom 0-${MAXZOOM}`;
+
+  await probe();
+
+  h('加载地形');
+  try {
+    await loadTerrain();
+    say('layer.json 已解析，provider ready', 'ok');
+  } catch (e) {
+    say(`地形 provider 创建失败: ${e.message || e}`, 'err');
+    return;
+  }
+
+  try {
+    viewer.imageryLayers.addImageryProvider(
+      new Cesium.OpenStreetMapImageryProvider({ url: 'https://tile.openstreetmap.org/' }));
+    say('已叠加 OSM 底图', 'ok');
+  } catch (e) {
+    say('底图加载失败（不影响地形）', 'warn');
+  }
+
+  viewer.camera.flyTo({
+    destination: Cesium.Cartesian3.fromDegrees(WORLD_CENTER.lon, WORLD_CENTER.lat, 180000),
+    orientation: { heading: 0, pitch: Cesium.Math.toRadians(-55), roll: 0 },
+    duration: 0,
+  });
+
+  // 瓦片请求结束后汇总。
+  // 必须等到「确实忙过、再归于空闲」才能汇总：相机就位前
+  // tileLoadProgressEvent 会先报一次 0，若见 0 就汇总，会在任何瓦片
+  // 入队之前就打印，得出的「没有细分」「高程 -1314 m」全是假的。
+  let settle = null, sawActivity = false;
+  viewer.scene.globe.tileLoadProgressEvent.addEventListener((n) => {
+    clearTimeout(settle);
+    if (n > 0) {
+      sawActivity = true;
+      settle = null;
+    } else if (sawActivity) {
+      settle = setTimeout(finish, 2000);   // 归零后再等一拍，防止反复启停
+    }
+  });
+  setTimeout(finish, 30000);   // 兜底：即使一直没忙过也要有个输出
+
+  let finished = false;
+  function finish() {
+    if (finished) return;
+    finished = true;
+    h('瓦片请求汇总');
+    reportTiles();
+
+    // 「有没有往下细分」的判断依据：成功取回的瓦片数量。0 级只有 2 块，
+    // 所以成功数超过 2 就说明 globe 确实在往深层细分。
+    const okTiles = tileLog.filter((t) => t.status === 200).length;
+    if (okTiles > 2) {
+      say(`成功取回 ${okTiles} 块瓦片，已细分到深层。` +
+          (viewer.scene.globe.tilesLoaded ? '地形加载完成。' : ''), 'ok');
+      say('拖动/滚轮可查看起伏，下方可调垂直夸张。', 'ok');
+    } else {
+      say(`只成功取回 ${okTiles} 块瓦片（0 级共 2 块），globe 没有往深层细分。` +
+          `若上方自检标出了 Content-Encoding 问题，先按那里的提示换服务器。`, 'err');
+    }
+    sampleHeights();
+    addControls();
+  }
+})();
+
+function addControls() {
+  h('显示');
+  const l = document.createElement('label');
+  l.textContent = '垂直夸张：2.0x';
+  const s = document.createElement('input');
+  s.type = 'range'; s.min = '1'; s.max = '5'; s.step = '0.5'; s.value = '2';
+  s.oninput = () => {
+    viewer.scene.verticalExaggeration = Number(s.value);
+    l.textContent = `垂直夸张：${Number(s.value).toFixed(1)}x`;
+  };
+  l.appendChild(s);
+  panel.appendChild(l);
+}
+
+// 暴露到 window，方便在 F12 控制台里继续排查（也便于自动化验证）：
+//   viewer.scene.globe.getHeight(...)   取任意点高程
+//   tileLog                             本次会话的全部瓦片请求与状态码
+window.viewer = viewer;
+window.tileLog = tileLog;
+
+});   // DOMContentLoaded
+</script>
+</body>
+</html>

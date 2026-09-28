@@ -1,0 +1,4 @@
+res_05_3600 -> maxzoom 15
+res_1_3600 -> maxzoom 14
+res_2_3600 -> maxzoom 13
+res_3_3600 -> maxzoom 12

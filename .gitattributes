@@ -1,0 +1,50 @@
+# 换行符与编码规则。
+#
+# 这个文件解决两类问题，性质完全不同，所以分成两段写。
+#
+# 【一】整棵目录必须逐字节原样
+#
+#   ctb/      自包含的 CTB/GDAL 分发（49 个 DLL + PROJ/GDAL 数据文件）。
+#             它的全部价值就是"在这台机器上验证过、原样搬过去就能跑"
+#             （NFR-02）。用 autocrlf 去改写 share/ 下那些 .csv/.xml/.ini/
+#             数据文件的换行，等于把这份验证作废 —— 而且出问题时症状是
+#             GDAL 深处某个解析错误，既不像换行问题、也指不回这里。
+#
+#   baseline/ 基线运行留档。它有资格当 M0–M2 的对拍基准，前提是它确实
+#             是当初那次运行产出的那些字节。"git 顺手把换行改了"会让这份
+#             证据不再是原件。
+#
+# 【二】.cmd 必须 CRLF，这条是有功能后果的
+#
+#   README §6.2 实测：LF-only 的 .cmd 会在 `goto :label` 处失败，报
+#   "system cannot find the batch label"。cmd.exe 按【字节偏移】找标签，
+#   所以能不能跑只取决于标签落在第几个字节 —— 一次无关的一行编辑就可能
+#   把它推过阈值。同一份文件 LF 版失败、CRLF 版成功，与文件名无关。
+#
+#   这条规则必须排在 `baseline/** -text` 之后：gitattributes 是后匹配者
+#   生效，顺序反了就会被 -text 吃掉。
+#
+# 显式声明而不依赖 core.autocrlf，是因为它的取值因人因机而异，
+# 等于让仓库里的字节取决于谁的本地配置。
+
+# --- 一、逐字节原样 --------------------------------------------------------
+ctb/**       -text
+baseline/**  -text
+
+# --- 二、按扩展名 ----------------------------------------------------------
+# .cmd 放最前，确保它覆盖上面的 -text。
+*.cmd        text eol=crlf
+*.bat        text eol=crlf
+
+# 二进制：不做换行或编码转换，也不让 git 试图 diff。
+*.tif        binary
+*.terrain    binary
+*.dll        binary
+*.exe        binary
+*.pyd        binary
+*.zip        binary
+*.db         binary
+
+# 源码走 LF，方便 diff。Python 不关心，但统一的 diff 更干净。
+*.py         text eol=lf
+*.md         text eol=lf

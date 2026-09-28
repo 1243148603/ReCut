@@ -1,0 +1,13 @@
+{
+  "tilejson": "2.1.0",
+  "name": "chongqing",
+  "description": "Chongqing DEM terrain tiles (Copernicus GLO-30, 30m)",
+  "version": "1.1.0",
+  "format": "heightmap-1.0",
+  "scheme": "tms",
+  "tiles": ["{z}/{x}/{y}.terrain"],
+  "minzoom": 0,
+  "maxzoom": 14,
+  "bounds": [105.3, 28.1, 110.2, 32.2],
+  "extensions": ["watermask"]
+}

@@ -36,6 +36,9 @@ internal static class Program
             case "grid-gate":
                 return Gates.TileGridGate(args.Length > 1 ? args[1] : @"D:\Map");
 
+            case "download":
+                return DownloadCommand.RunAsync(@"D:\Map", args.Contains("--network")).GetAwaiter().GetResult();
+
             case "package":
                 return PackageCommand.Run(
                     @"D:\Map",

@@ -22,6 +22,7 @@ public sealed class MainForm : Form
     private readonly ToolStripStatusLabel _status = new();
     private readonly ToolStripProgressBar _progress = new();
     private readonly ToolStripButton _cancelButton = new();
+    private readonly ToolStripButton _pauseButton = new();
 
     public MainForm(CtbHome ctbHome)
     {
@@ -45,13 +46,14 @@ public sealed class MainForm : Form
         var newMosaic = new ToolStripButton("新建任务…") { DisplayStyle = ToolStripItemDisplayStyle.Text };
         newMosaic.Click += (_, _) => NewTask();
 
-        // 下载是工具条上的独立入口（PRD FR-06，不在向导内），M4 实现。
-        var download = new ToolStripButton("下载 DEM 数据…")
-        {
-            DisplayStyle = ToolStripItemDisplayStyle.Text,
-            Enabled = false,
-            ToolTipText = "M4 实现",
-        };
+        // 下载是工具条上的独立入口（PRD FR-06，不在新建任务向导内）。
+        var download = new ToolStripButton("下载 DEM 数据…") { DisplayStyle = ToolStripItemDisplayStyle.Text };
+        download.Click += (_, _) => NewDownloadTask();
+
+        _pauseButton.Text = "暂停";
+        _pauseButton.DisplayStyle = ToolStripItemDisplayStyle.Text;
+        _pauseButton.Enabled = false;
+        _pauseButton.Click += (_, _) => TogglePause();
 
         _cancelButton.Text = "取消当前任务";
         _cancelButton.DisplayStyle = ToolStripItemDisplayStyle.Text;
@@ -61,6 +63,7 @@ public sealed class MainForm : Form
         toolbar.Items.Add(newMosaic);
         toolbar.Items.Add(download);
         toolbar.Items.Add(new ToolStripSeparator());
+        toolbar.Items.Add(_pauseButton);
         toolbar.Items.Add(_cancelButton);
 
         _jobList.View = View.Details;
@@ -188,6 +191,61 @@ public sealed class MainForm : Form
         };
     }
 
+    private void NewDownloadTask()
+    {
+        using var dialog = new DownloadForm();
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+
+        var job = new DownloadJob
+        {
+            Source = dialog.SelectedSource,
+            Tiles = dialog.Tiles,
+            SaveDirectory = dialog.SaveDirectory,
+            Area = dialog.Area,
+        };
+        _jobs.Add(job);
+        _pending.Enqueue(job);
+        AddJobRow(job);
+        AppendLog($"已入队 [下载] {job.Display}");
+        AppendLog($"  展开后的首个 URL：{dialog.SelectedSource.Expand(dialog.Tiles[0])}");
+        StartNext();
+    }
+
+    /// <summary>
+    /// PRD FR-11：运行中暂停**只有下载支持**。其余类型点了要明确说清"为什么不能"，
+    /// 而不是静默无反应——用户会以为按钮坏了。
+    /// </summary>
+    private void TogglePause()
+    {
+        if (_current is null) return;
+
+        if (!_current.SupportsPause)
+        {
+            MessageBox.Show(this,
+                $"「{_current.TypeName}」无法中途暂停。\n\n" +
+                "下载是唯一在分块之间插了等待点的任务类型；切片（子进程）、" +
+                "拼接（一次性 gdal.Warp）、打包（一串一次性步骤）都没有可插等待点的循环。\n\n" +
+                "可以先「取消当前任务」，之后从队列重新开始。",
+                "该任务类型无法中途暂停", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        if (_current.Pause.IsPaused)
+        {
+            _current.Pause.Resume();
+            _pauseButton.Text = "暂停";
+            SetStatus($"{_current.TypeName}：{_current.Display}");
+            AppendLog("已恢复");
+        }
+        else
+        {
+            _current.Pause.Pause();
+            _pauseButton.Text = "继续";
+            SetStatus($"已暂停：{_current.Display}");
+            AppendLog("已暂停（当前分块写完后停下；恢复后按 Range 续传，不重下）");
+        }
+    }
+
     private void StartNext()
     {
         if (_current is not null || _pending.Count == 0) return;
@@ -197,6 +255,8 @@ public sealed class MainForm : Form
         job.Status = JobStatus.Running;
         UpdateJobRow(job);
         _cancelButton.Enabled = true;
+        _pauseButton.Enabled = true;
+        _pauseButton.Text = "暂停";
         SetStatus($"{job.TypeName}：{job.Display}");
         _progress.Visible = true;
         _progress.Value = 0;
@@ -225,6 +285,11 @@ public sealed class MainForm : Form
                 job.StatusDetail = result.Summary ?? "完成";
                 job.ProductPath = result.ProductPath;
                 _pump.Post(() => AppendLog($"完成：{job.StatusDetail}"));
+
+                // FR-06：下载成功后给一个「继续处理这批 DEM」的入口。
+                // 下载被摘成独立入口之后，链路不再一次跑完，这一步是补偿。
+                if (job is DownloadJob download)
+                    _pump.Post(() => OfferContinue(download));
             }
             else
             {
@@ -254,11 +319,50 @@ public sealed class MainForm : Form
                 UpdateJobRow(job);
                 _current = null;
                 _cancelButton.Enabled = false;
+                _pauseButton.Enabled = false;
+                _pauseButton.Text = "暂停";
                 _progress.Visible = false;
                 SetStatus("就绪");
                 StartNext();
             });
         }
+    }
+
+    /// <summary>下载完成后问一句要不要接着处理这批 DEM，并把分幅预填进拼接对话框。</summary>
+    private void OfferContinue(DownloadJob download)
+    {
+        if (download.DownloadedDirectory is not { } dir) return;
+
+        var files = Directory.Exists(dir)
+            ? Directory.GetFiles(dir, "*.tif").OrderBy(p => p, StringComparer.Ordinal).ToArray()
+            : [];
+        if (files.Length == 0)
+        {
+            AppendLog("下载目录里没有 .tif，无法继续处理。");
+            return;
+        }
+
+        var answer = MessageBox.Show(this,
+            $"这批 {files.Length} 幅 DEM 已下载到：\n{dir}\n\n要现在接着做拼接裁剪吗？",
+            "继续处理这批 DEM", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+        if (answer != DialogResult.Yes) return;
+
+        using var dialog = new MosaicForm(files);
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+
+        var job = new MosaicJob
+        {
+            InputPaths = dialog.InputPaths,
+            OutputPath = dialog.OutputPath,
+            Target = dialog.Target,
+            Resampling = dialog.Resampling,
+            WriteMetadata = dialog.WriteMetadata,
+        };
+        _jobs.Add(job);
+        _pending.Enqueue(job);
+        AddJobRow(job);
+        AppendLog($"已入队 [{job.TypeName}] {job.Display}");
+        StartNext();
     }
 
     private void CancelCurrent()

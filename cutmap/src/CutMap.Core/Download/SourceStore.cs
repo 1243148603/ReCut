@@ -1,0 +1,116 @@
+using System.Text.Encodings.Web;
+using System.Text.Json;
+using CutMap.Core.Store;
+
+namespace CutMap.Core.Download;
+
+/// <summary>
+/// 下载源列表的持久化（FR-16）。
+///
+/// 内置源**始终存在且不可删除**（可禁用）：删掉它之后如果用户的镜像全挂了，
+/// 就没有任何可用的源，而"下不到数据"的原因会变得难以判断。用户能改的只是
+/// 启不启用它。
+/// </summary>
+public sealed class SourceStore
+{
+    private readonly List<DownloadSource> _sources = [];
+
+    private static readonly JsonSerializerOptions WriteOptions = new()
+    {
+        WriteIndented = true,
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+    };
+
+    public SourceStore()
+    {
+        _sources.Add(DownloadSource.CopernicusOfficial);
+        Load();
+    }
+
+    public IReadOnlyList<DownloadSource> All => _sources;
+
+    /// <summary>下拉里可选的源。</summary>
+    public IReadOnlyList<DownloadSource> Enabled =>
+        [.. _sources.Where(s => s.Enabled)];
+
+    public DownloadSource? ById(string id) => _sources.FirstOrDefault(s => s.Id == id);
+
+    /// <summary>新增或替换。内置源的 Id 与 IsBuiltIn 会被强制保留。</summary>
+    public void Save(DownloadSource source)
+    {
+        var existing = _sources.FindIndex(s => s.Id == source.Id);
+        if (existing < 0)
+        {
+            _sources.Add(source);
+        }
+        else
+        {
+            var isBuiltIn = _sources[existing].IsBuiltIn;
+            _sources[existing] = source with
+            {
+                IsBuiltIn = isBuiltIn,
+                Id = _sources[existing].Id,
+            };
+        }
+        Persist();
+    }
+
+    /// <summary>删除。内置源删不掉，返回 false。</summary>
+    public bool Delete(string id)
+    {
+        var index = _sources.FindIndex(s => s.Id == id);
+        if (index < 0 || _sources[index].IsBuiltIn) return false;
+        _sources.RemoveAt(index);
+        Persist();
+        return true;
+    }
+
+    /// <summary>记一次成败，便于判断内网镜像还活着没有（FR-16 最后一条）。</summary>
+    public void RecordOutcome(string id, bool success, string? error)
+    {
+        var index = _sources.FindIndex(s => s.Id == id);
+        if (index < 0) return;
+        _sources[index] = success
+            ? _sources[index] with { LastSuccess = DateTimeOffset.Now, LastError = null }
+            : _sources[index] with { LastError = error };
+        Persist();
+    }
+
+    private void Load()
+    {
+        try
+        {
+            if (!File.Exists(AppPaths.SourcesFile)) return;
+            var loaded = JsonSerializer.Deserialize<List<DownloadSource>>(
+                File.ReadAllText(AppPaths.SourcesFile));
+            if (loaded is null) return;
+
+            foreach (var source in loaded)
+            {
+                if (source.IsBuiltIn) continue;   // 内置源以代码里的为准，不吃磁盘上的旧版本
+                if (_sources.Any(s => s.Id == source.Id)) continue;
+                _sources.Add(source);
+            }
+        }
+        catch (Exception)
+        {
+            // 配置坏了不该让软件起不来：内置源已经在列表里，用户重新加一条即可。
+        }
+    }
+
+    private void Persist()
+    {
+        try
+        {
+            // 内置源不写盘：它的定义属于代码，写出去反而会在升级时留下过期的旧模板。
+            var custom = _sources.Where(s => !s.IsBuiltIn).ToList();
+            File.WriteAllText(AppPaths.SourcesFile,
+                              JsonSerializer.Serialize(custom, WriteOptions),
+                              new System.Text.UTF8Encoding(false));
+        }
+        catch (Exception)
+        {
+            // 写不进去（磁盘满、权限）不该让当前操作失败——内存里的改动依然有效。
+        }
+    }
+}

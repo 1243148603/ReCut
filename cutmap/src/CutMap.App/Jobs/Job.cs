@@ -1,3 +1,4 @@
+using CutMap.Core.Download;
 using CutMap.Core.Tools;
 
 namespace CutMap.App.Jobs;
@@ -54,6 +55,19 @@ public abstract class Job
 
     /// <summary>取消用。切片与拼接都是单进程/gdal 内部线程，取消即中断，不涉及进程树。</summary>
     public CancellationTokenSource Cancellation { get; } = new();
+
+    /// <summary>
+    /// 运行中暂停用的等待点。
+    ///
+    /// **只有下载支持中途暂停**（PRD FR-11 / OUT-07）：下载有一个天然的循环
+    /// （1 MB 分块读写），在块之间插等待点即可，恢复后按 Range 续传不重下。
+    /// 切片是子进程、拼接是一次性 gdal.Warp、打包是一串一次性步骤，都没有可插
+    /// 等待点的循环，点了暂停只能退化为"跑完当前即停"。
+    /// </summary>
+    public PauseToken Pause { get; } = new();
+
+    /// <summary>该任务类型能否在运行中真正暂停下来。</summary>
+    public virtual bool SupportsPause => false;
 
     public abstract JobResult Execute(
         CtbHome ctbHome,

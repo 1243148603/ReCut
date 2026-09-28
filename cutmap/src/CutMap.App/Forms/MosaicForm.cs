@@ -35,7 +35,11 @@ public sealed class MosaicForm : Form
     public string Resampling => _resampling.SelectedItem?.ToString() ?? Mosaic.DefaultResampling;
     public bool WriteMetadata => _metadata.Checked;
 
-    public MosaicForm()
+    /// <param name="initialInputs">
+    /// 预填的输入文件。用于「下载完这批 DEM → 继续处理」这条路径（FR-06），
+    /// 免得用户刚下载完又得手动把 30 幅一个个选回来。
+    /// </param>
+    public MosaicForm(IReadOnlyList<string>? initialInputs = null)
     {
         Text = "新建拼接裁剪任务";
         StartPosition = FormStartPosition.CenterParent;
@@ -45,7 +49,25 @@ public sealed class MosaicForm : Form
 
         BuildLayout();
         ApplyPreset(BuiltInPresets.Chongqing);
-        UpdateCoverage();
+
+        foreach (var path in initialInputs ?? [])
+        {
+            try
+            {
+                _infos.Add(RasterInfo.Read(path));
+            }
+            catch (RasterException)
+            {
+                // 预填路径里有读不了的，跳过即可——用户还能手动添加。
+            }
+        }
+        if (_infos.Count > 0 && string.IsNullOrWhiteSpace(_output.Text))
+        {
+            var first = Path.GetDirectoryName(_infos[0].Path) ?? "";
+            _output.Text = Path.Combine(first, "dem_clipped.tif");
+        }
+
+        RefreshInputs();
     }
 
     private void BuildLayout()

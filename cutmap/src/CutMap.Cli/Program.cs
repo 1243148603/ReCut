@@ -36,6 +36,13 @@ internal static class Program
             case "grid-gate":
                 return Gates.TileGridGate(args.Length > 1 ? args[1] : @"D:\Map");
 
+            case "warp":
+                return MosaicCommand.Run(
+                    @"D:\Map",
+                    args.Length > 1 ? args[1] : null,
+                    args.Length > 2 ? args[2] : null,
+                    args.Length > 3 ? args[3] : null);
+
             case "slice":
             {
                 if (args.Length < 2) return Usage();
@@ -60,6 +67,11 @@ internal static class Program
                                    checksum against the baseline (expect 58775)
               ctb-gate [repo]      M0 gate 2: ctb-tile subprocess, live progress,
                                    and the exit-code-0-on-failure trap
+              grid-gate [repo]     M1 gate: tile-grid arithmetic vs the baseline
+              warp [in] [out] [W S E N]
+                                   M2: mosaic + clip + algo metadata json
+              slice <tif> [out] [maxzoom]
+                                   M1: slice a GeoTIFF into terrain tiles
             """);
         return 2;
     }

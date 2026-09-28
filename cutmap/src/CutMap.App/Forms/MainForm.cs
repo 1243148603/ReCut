@@ -133,6 +133,7 @@ public sealed class MainForm : Form
         {
             TaskKind.Mosaic => BuildMosaicJob(),
             TaskKind.Slice => BuildSliceJob(),
+            TaskKind.Package => BuildPackageJob(),
             _ => null,
         };
 
@@ -167,6 +168,23 @@ public sealed class MainForm : Form
             InputPath = dialog.InputPath,
             OutputDirectory = dialog.OutputDirectory,
             MaxZoom = dialog.MaxZoom,
+        };
+    }
+
+    private PackageJob? BuildPackageJob()
+    {
+        using var dialog = new PackageForm();
+        if (dialog.ShowDialog(this) != DialogResult.OK) return null;
+        return new PackageJob
+        {
+            OutputDirectory = dialog.OutputDirectory,
+            TilesDirectory = dialog.TilesDirectory,
+            AlgoTifPath = dialog.AlgoTifPath,
+            ZipTiles = dialog.ZipTiles,
+            ZipAlgo = dialog.ZipAlgo,
+            LayerName = dialog.LayerName,
+            LayerDescription = dialog.LayerDescription,
+            LayerVersion = dialog.LayerVersion,
         };
     }
 

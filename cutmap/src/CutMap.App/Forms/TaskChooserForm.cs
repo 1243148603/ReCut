@@ -4,6 +4,7 @@ public enum TaskKind
 {
     Mosaic,
     Slice,
+    Package,
 }
 
 /// <summary>
@@ -21,48 +22,51 @@ public sealed class TaskChooserForm : Form
         MaximizeBox = false;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(420, 190);
+        ClientSize = new Size(560, 210);
         Font = new Font("Microsoft YaHei UI", 9F);
 
         var layout = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             Padding = new Padding(16),
-            ColumnCount = 2,
+            ColumnCount = 3,
             RowCount = 3,
         };
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        for (var c = 0; c < 3; c++) layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f / 3));
 
         var hint = new Label
         {
-            Text = "本次要执行哪一步？",
+            Text = "本次要执行哪一步？（三步可各自独立跑）",
             Dock = DockStyle.Fill,
             Height = 28,
         };
         layout.Controls.Add(hint, 0, 0);
-        layout.SetColumnSpan(hint, 2);
+        layout.SetColumnSpan(hint, 3);
 
-        var mosaic = new Button { Text = "拼接裁剪", Dock = DockStyle.Fill, Height = 52 };
-        mosaic.Click += (_, _) => Finish(TaskKind.Mosaic);
-        var slice = new Button { Text = "切片", Dock = DockStyle.Fill, Height = 52 };
-        slice.Click += (_, _) => Finish(TaskKind.Slice);
-
-        layout.Controls.Add(mosaic, 0, 1);
-        layout.Controls.Add(slice, 1, 1);
+        layout.Controls.Add(MakeButton("拼接裁剪", TaskKind.Mosaic), 0, 1);
+        layout.Controls.Add(MakeButton("切片", TaskKind.Slice), 1, 1);
+        layout.Controls.Add(MakeButton("打包", TaskKind.Package), 2, 1);
 
         var note = new Label
         {
-            Text = "拼接裁剪可从多幅 DEM 产出裁剪后的 GeoTIFF（含算法元数据 json）；\n" +
-                   "切片把一份 DEM 变成 Cesium 地形瓦片。",
+            Text = "拼接裁剪：多幅 DEM → 裁剪后的 GeoTIFF（可带算法元数据 json）\n" +
+                   "切片：一份 DEM → Cesium 地形瓦片\n" +
+                   "打包：给已有的瓦片目录写 layer.json、或把产物打成 zip（不必重跑切片）",
             Dock = DockStyle.Fill,
             ForeColor = SystemColors.GrayText,
-            Height = 44,
+            Height = 58,
         };
         layout.Controls.Add(note, 0, 2);
-        layout.SetColumnSpan(note, 2);
+        layout.SetColumnSpan(note, 3);
 
         Controls.Add(layout);
+    }
+
+    private Button MakeButton(string text, TaskKind kind)
+    {
+        var button = new Button { Text = text, Dock = DockStyle.Fill, Height = 56 };
+        button.Click += (_, _) => Finish(kind);
+        return button;
     }
 
     private void Finish(TaskKind kind)

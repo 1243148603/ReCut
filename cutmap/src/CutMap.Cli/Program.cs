@@ -36,6 +36,13 @@ internal static class Program
             case "grid-gate":
                 return Gates.TileGridGate(args.Length > 1 ? args[1] : @"D:\Map");
 
+            case "package":
+                return PackageCommand.Run(
+                    @"D:\Map",
+                    args.Length > 1 ? args[1] : null,
+                    args.Length > 2 ? args[2] : null,
+                    args.Length > 3 ? args[3] : null);
+
             case "warp":
                 return MosaicCommand.Run(
                     @"D:\Map",

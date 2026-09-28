@@ -10,6 +10,15 @@
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
+
+    <!-- NFR-02：自包含，用户机器不需要装 .NET 运行时。
+         这不是可选的优化——本机就撞到过：SDK 装在用户目录，而 exe 的宿主
+         会去 C:\Program Files\dotnet 找运行时，那里只有 3.1/6.0/7.0，
+         于是双击 exe 直接报 "You must install or update .NET"。
+         目标平台只有 Windows x64（OUT-05），所以 RID 写死。 -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>false</PublishSingleFile>
   </PropertyGroup>
 
 </Project>

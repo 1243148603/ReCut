@@ -14,6 +14,25 @@ public sealed record CtbHome(string Root)
     /// <summary>仓库内 <c>ctb\</c> 的默认位置。开发期用；打包后由 App 侧改写。</summary>
     public static CtbHome Default(string repoRoot) => new(Path.Combine(repoRoot, "ctb"));
 
+    /// <summary>
+    /// 从可执行文件所在目录逐级往上找 <c>ctb\</c>。
+    ///
+    /// 开发期 exe 在 <c>cutmap\src\CutMap.App\bin\Debug\net8.0-windows\</c>，
+    /// 打包后 <c>ctb\</c> 会与 exe 同级——两种情况都能靠"往上找"覆盖，
+    /// 所以这里不写死相对层数。
+    /// </summary>
+    public static CtbHome? Locate(string? startDirectory = null)
+    {
+        var dir = new DirectoryInfo(startDirectory ?? AppContext.BaseDirectory);
+        while (dir is not null)
+        {
+            var candidate = new CtbHome(Path.Combine(dir.FullName, "ctb"));
+            if (File.Exists(candidate.ExePath)) return candidate;
+            dir = dir.Parent;
+        }
+        return null;
+    }
+
     public bool IsValid(out string reason)
     {
         if (!File.Exists(ExePath)) { reason = $"找不到 {ExePath}"; return false; }

@@ -159,6 +159,7 @@ public sealed class MainForm : Form
             Target = dialog.Target,
             Resampling = dialog.Resampling,
             WriteMetadata = dialog.WriteMetadata,
+            Boundaries = dialog.Boundaries,
         };
     }
 

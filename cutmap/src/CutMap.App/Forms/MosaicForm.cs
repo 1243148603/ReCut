@@ -1,6 +1,7 @@
 using System.Globalization;
 using CutMap.Core.Geo;
 using CutMap.Core.Store;
+using CutMap.Core.Vector;
 
 namespace CutMap.App.Forms;
 
@@ -22,6 +23,11 @@ public sealed class MosaicForm : Form
     private readonly ComboBox _resampling = new();
     private readonly CheckBox _metadata = new();
     private readonly Button _ok = new();
+    private readonly CheckBox _useBoundary = new();
+    private readonly Button _pickBoundary = new();
+    private readonly Label _boundarySummary = new();
+    private readonly BoundaryStore _boundaryStore = BoundaryStore.Locate();
+    private IReadOnlyList<BoundaryFeature> _boundaries = [];
 
     private readonly List<RasterInfo> _infos = [];
     private bool _suppressPresetEvent;
@@ -34,6 +40,9 @@ public sealed class MosaicForm : Form
         Parse(_bounds[0]), Parse(_bounds[1]), Parse(_bounds[2]), Parse(_bounds[3]));
     public string Resampling => _resampling.SelectedItem?.ToString() ?? Mosaic.DefaultResampling;
     public bool WriteMetadata => _metadata.Checked;
+    /// <summary>非空即走矢量模式。</summary>
+    public IReadOnlyList<BoundaryFeature>? Boundaries =>
+        _useBoundary.Checked && _boundaries.Count > 0 ? _boundaries : null;
 
     /// <param name="initialInputs">
     /// 预填的输入文件。用于「下载完这批 DEM → 继续处理」这条路径（FR-06），
@@ -68,6 +77,7 @@ public sealed class MosaicForm : Form
         }
 
         RefreshInputs();
+        UpdateEnabled();
     }
 
     private void BuildLayout()
@@ -147,7 +157,24 @@ public sealed class MosaicForm : Form
             range.Controls.Add(box, i + 2, 1);
         }
 
+        _useBoundary.Text = "按行政区划边界裁剪";
+        _useBoundary.AutoSize = true;
+        _useBoundary.CheckedChanged += (_, _) => UpdateEnabled();
+        range.Controls.Add(_useBoundary, 0, 2);
+        range.SetColumnSpan(_useBoundary, 2);
+
+        _pickBoundary.Text = "选择边界…";
+        _pickBoundary.Width = 96;
+        _pickBoundary.Click += (_, _) => PickBoundary();
+        range.Controls.Add(_pickBoundary, 2, 2);
+        range.Controls.Add(_boundarySummary, 3, 2);
+        range.SetColumnSpan(_boundarySummary, 4);
+        _boundarySummary.AutoEllipsis = true;
+        _boundarySummary.ForeColor = SystemColors.GrayText;
+
         for (var c = 0; c < 7; c++) range.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        range.RowCount = 3;
+        rangeBox.Height = 128;
         rangeBox.Controls.Add(range);
         root.Controls.Add(rangeBox, 0, 2);
 
@@ -232,6 +259,7 @@ public sealed class MosaicForm : Form
             }
         }
         RefreshInputs();
+        UpdateEnabled();
     }
 
     private void RemoveSelected()
@@ -239,6 +267,7 @@ public sealed class MosaicForm : Form
         foreach (ListViewItem item in _inputs.SelectedItems)
             if (item.Tag is RasterInfo info) _infos.Remove(info);
         RefreshInputs();
+        UpdateEnabled();
     }
 
     private void RefreshInputs()
@@ -306,9 +335,16 @@ public sealed class MosaicForm : Form
             return;
         }
 
-        var target = Target;
-        if (double.IsNaN(target.West) || double.IsNaN(target.South) ||
-            double.IsNaN(target.East) || double.IsNaN(target.North))
+        // 矢量模式下真正的裁剪范围是选中边界的并集，不是右边那四个框——
+        // 用矩形框去做覆盖检查会检查错对象。
+        var target = Boundaries is { Count: > 0 } picked
+            ? BoundaryExport.UnionBounds(picked)
+            : Target;
+
+        // "填了没有"只在矩形模式下问：矢量模式的范围来自几何，不存在没填这回事。
+        if (Boundaries is null &&
+            (double.IsNaN(target.West) || double.IsNaN(target.South) ||
+             double.IsNaN(target.East) || double.IsNaN(target.North)))
         {
             SetCoverage("裁剪范围要填四个数：西 南 东 北。", Color.Firebrick);
             _ok.Enabled = false;
@@ -331,6 +367,41 @@ public sealed class MosaicForm : Form
 
         SetCoverage($"覆盖检查通过。{coverage.Describe()}", Color.DarkGreen);
         _ok.Enabled = !string.IsNullOrWhiteSpace(_output.Text);
+    }
+
+    private void PickBoundary()
+    {
+        if (_boundaryStore.IsEmpty)
+        {
+            MessageBox.Show(this, _boundaryStore.Describe(), "没有边界数据",
+                            MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+        using var picker = new BoundaryPickerForm(_boundaryStore);
+        if (picker.ShowDialog(this) != DialogResult.OK) return;
+        _boundaries = picker.Selected;
+        _useBoundary.Checked = true;
+        UpdateEnabled();
+    }
+
+    private void UpdateEnabled()
+    {
+        var vector = _useBoundary.Checked;
+        foreach (var box in _bounds) box.Enabled = !vector;
+        _pickBoundary.Enabled = vector;
+
+        if (!vector)
+        {
+            _boundarySummary.Text = "";
+        }
+        else
+        {
+            _boundarySummary.Text = _boundaries.Count == 0
+                ? "尚未选择区域。"
+                : "已选 " + string.Join("、", _boundaries.Select(b => b.Name)) +
+                  $"（{BoundaryExport.UnionBounds(_boundaries)}）";
+        }
+        UpdateCoverage();
     }
 
     private void SetCoverage(string text, Color color)

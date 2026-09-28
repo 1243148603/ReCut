@@ -36,6 +36,20 @@ public sealed class MosaicJob : Job
             ? $"{InputPaths.Count} 幅 → {Path.GetFileName(OutputPath)}"
             : $"{string.Join("+", Boundaries.Select(b => b.Name))} → {Path.GetFileName(OutputPath)}";
 
+    public override string ParametersJson => System.Text.Json.JsonSerializer.Serialize(new
+    {
+        kind = Boundaries is null ? "mosaic" : "mosaic-vector",
+        inputs = InputPaths,
+        output = OutputPath,
+        west = Target.West, south = Target.South, east = Target.East, north = Target.North,
+        resampling = Resampling,
+        writeMetadata = WriteMetadata,
+        // 只存编码不存几何：几何动辄几十万顶点，而 PRD FR-09 要的是"能回填"。
+        // 有 code 就能从边界库里重新取到几何，存进去只是把历史文件撑爆。
+        boundaries = Boundaries?.Select(b => new { b.Name, b.Code }),
+        skirt = SkirtElevation,
+    });
+
     public override JobResult Execute(
         CtbHome ctbHome,
         Action<double> onProgress,

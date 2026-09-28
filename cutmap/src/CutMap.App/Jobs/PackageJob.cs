@@ -27,6 +27,19 @@ public sealed class PackageJob : Job
         : TilesDirectory is not null ? $"前端：{Path.GetFileName(TilesDirectory.TrimEnd(Path.DirectorySeparatorChar))}"
         : $"算法：{Path.GetFileName(AlgoTifPath ?? "")}";
 
+    public override string ParametersJson => System.Text.Json.JsonSerializer.Serialize(new
+    {
+        kind = "package",
+        output = OutputDirectory,
+        tiles = TilesDirectory,
+        tif = AlgoTifPath,
+        zipTiles = ZipTiles,
+        zipAlgo = ZipAlgo,
+        layerName = LayerName,
+        layerDescription = LayerDescription,
+        layerVersion = LayerVersion,
+    });
+
     public override JobResult Execute(
         CtbHome ctbHome,
         Action<double> onProgress,

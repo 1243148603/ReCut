@@ -26,7 +26,11 @@ public sealed class SliceForm : Form
     public string OutputDirectory => _output.Text.Trim();
     public int? MaxZoom => _autoZoom.Checked ? null : (int)_maxZoom.Value;
 
-    public SliceForm()
+    /// <param name="initialInput">从历史重跑时预填的输入栅格。</param>
+    /// <param name="initialOutput">预填的输出目录。</param>
+    /// <param name="initialMaxZoom">预填的最深层级；null 表示"自动"。</param>
+    public SliceForm(string? initialInput = null, string? initialOutput = null,
+                     int? initialMaxZoom = null)
     {
         Text = "新建切片任务";
         FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -37,6 +41,15 @@ public sealed class SliceForm : Form
         Font = new Font("Microsoft YaHei UI", 9F);
 
         BuildLayout();
+
+        if (initialInput is not null) LoadInput(initialInput);
+        if (initialOutput is not null) _output.Text = initialOutput;
+        if (initialMaxZoom is { } zoom)
+        {
+            _autoZoom.Checked = false;
+            _maxZoom.Enabled = true;
+            _maxZoom.Value = Math.Clamp(zoom, _maxZoom.Minimum, _maxZoom.Maximum);
+        }
         UpdateEstimate();
     }
 
@@ -147,13 +160,18 @@ public sealed class SliceForm : Form
         };
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
 
-        _input.Text = dialog.FileName;
+        LoadInput(dialog.FileName);
         if (string.IsNullOrWhiteSpace(_output.Text))
             _output.Text = Path.Combine(Path.GetDirectoryName(dialog.FileName) ?? "", "cesium_terrain");
+        UpdateEstimate();
+    }
 
+    private void LoadInput(string path)
+    {
+        _input.Text = path;
         try
         {
-            _info = RasterInfo.Read(dialog.FileName);
+            _info = RasterInfo.Read(path);
             _inputSummary.Text = _info.Summary();
             _inputSummary.ForeColor = SystemColors.GrayText;
 
@@ -167,7 +185,6 @@ public sealed class SliceForm : Form
             _inputSummary.Text = ex.Message;
             _inputSummary.ForeColor = Color.Firebrick;
         }
-        UpdateEstimate();
     }
 
     private void BrowseOutput()

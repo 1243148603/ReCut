@@ -37,7 +37,11 @@ public sealed class PackageForm : Form
     private static string Fallback(string s, string fallback) =>
         string.IsNullOrWhiteSpace(s) ? fallback : s.Trim();
 
-    public PackageForm()
+    /// <param name="initialTiles">从历史重跑时预填的瓦片目录。</param>
+    /// <param name="initialTif">预填的裁剪 GeoTIFF。</param>
+    /// <param name="initialOutput">预填的 zip 输出目录。</param>
+    public PackageForm(string? initialTiles = null, string? initialTif = null,
+                       string? initialOutput = null)
     {
         Text = "打包 / 导出";
         StartPosition = FormStartPosition.CenterParent;
@@ -46,6 +50,10 @@ public sealed class PackageForm : Form
         Font = new Font("Microsoft YaHei UI", 9F);
 
         BuildLayout();
+
+        if (initialTiles is not null) { _tilesDir.Text = initialTiles; _wantTiles.Checked = true; }
+        if (initialTif is not null) { _tifPath.Text = initialTif; _wantAlgo.Checked = true; }
+        if (initialOutput is not null) _output.Text = initialOutput;
         UpdateEnabled();
     }
 

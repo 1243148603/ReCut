@@ -36,6 +36,15 @@ internal static class Program
             case "grid-gate":
                 return Gates.TileGridGate(args.Length > 1 ? args[1] : @"D:\Map");
 
+            case "verify":
+            {
+                var tiles = args.Length > 1
+                    ? args[1]
+                    : @"D:\Map\cutmap\_gate\slice_full";
+                var dem = args.Length > 2 ? args[2] : @"D:\Map\cutmap\_gate\warp\chongqing_dem.tif";
+                return VerifyCommand.Run(tiles, dem);
+            }
+
             case "boundary":
                 return BoundaryCommand.Run(@"D:\Map");
 
@@ -85,6 +94,11 @@ internal static class Program
                                    M2: mosaic + clip + algo metadata json
               slice <tif> [out] [maxzoom]
                                    M1: slice a GeoTIFF into terrain tiles
+              package [tiles] [tif] [out]
+                                   M3: layer.json, dual artifacts, zip
+              download [--network] M4: tile enumeration and URL templates
+              boundary             M5: boundaries, vector clip, export
+              verify [tiles] [dem] M6: is this tile set loadable by Cesium?
             """);
         return 2;
     }

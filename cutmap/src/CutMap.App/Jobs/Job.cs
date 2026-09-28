@@ -53,6 +53,19 @@ public abstract class Job
     public string? ProductPath { get; set; }
     public TimeSpan Elapsed { get; set; }
 
+    /// <summary>
+    /// 排队项被"挂起"（PRD FR-11）：挂起的任务不被调度，但仍留在队列里。
+    /// 这与"取消"不同——取消进终态并写历史，挂起只是让位。
+    /// </summary>
+    public bool IsSuspended { get; set; }
+
+    /// <summary>已开跑的任务不可移除：先取消，进终态后再移除（PRD FR-11）。</summary>
+    public bool IsTerminal =>
+        Status is JobStatus.Succeeded or JobStatus.Failed or JobStatus.Cancelled;
+
+    /// <summary>任务参数的 json，用于历史回填与重跑（FR-09）。由子类提供。</summary>
+    public abstract string ParametersJson { get; }
+
     /// <summary>取消用。切片与拼接都是单进程/gdal 内部线程，取消即中断，不涉及进程树。</summary>
     public CancellationTokenSource Cancellation { get; } = new();
 

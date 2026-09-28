@@ -23,6 +23,19 @@ public sealed class DownloadJob : Job
 
     public override bool SupportsPause => true;
 
+    public override string ParametersJson => System.Text.Json.JsonSerializer.Serialize(new
+    {
+        kind = "download",
+        sourceId = Source.Id,
+        sourceName = Source.Name,
+        urlTemplate = Source.UrlTemplate,
+        saveDirectory = SaveDirectory,
+        west = Area.West, south = Area.South, east = Area.East, north = Area.North,
+        // 只存区域与源：分幅可以从区域确定性地重算（DemTileGrid.Enumerate），
+        // 存几千个名字只会把历史文件撑大。
+        tileCount = Tiles.Count,
+    });
+
     public override JobResult Execute(
         CtbHome ctbHome,
         Action<double> onProgress,

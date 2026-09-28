@@ -33,7 +33,11 @@ public sealed class DownloadForm : Form
     public string SaveDirectory => _saveDir.Text.Trim();
     public BBox Area => new(Parse(_area[0]), Parse(_area[1]), Parse(_area[2]), Parse(_area[3]));
 
-    public DownloadForm()
+    /// <param name="initialArea">从历史重跑时预填的区域。</param>
+    /// <param name="initialSaveDir">预填的保存目录。</param>
+    /// <param name="initialSourceId">预填的下载源；找不到就退回第一个可用源。</param>
+    public DownloadForm(Core.Geo.BBox? initialArea = null, string? initialSaveDir = null,
+                        string? initialSourceId = null)
     {
         Text = "下载 DEM 数据";
         StartPosition = FormStartPosition.CenterParent;
@@ -43,7 +47,21 @@ public sealed class DownloadForm : Form
 
         BuildLayout();
         ReloadSources();
-        ApplyArea(new BBox(105.3, 28.1, 110.2, 32.2), "重庆全域");
+
+        if (initialSourceId is not null)
+        {
+            for (var i = 0; i < _source.Items.Count; i++)
+            {
+                if (_source.Items[i] is DownloadSource s && s.Id == initialSourceId)
+                {
+                    _source.SelectedIndex = i;
+                    break;
+                }
+            }
+        }
+        if (initialSaveDir is not null) _saveDir.Text = initialSaveDir;
+
+        ApplyArea(initialArea ?? new BBox(105.3, 28.1, 110.2, 32.2), "重庆全域");
     }
 
     private void BuildLayout()
@@ -83,11 +101,11 @@ public sealed class DownloadForm : Form
 
         areaRow.Controls.Add(new Label { Text = "预设：", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 0);
         var preset = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 140 };
-        foreach (var p in BuiltInPresets.All) preset.Items.Add(p);
+        foreach (var p in new PresetStore().ClipPresets) preset.Items.Add(p);
         preset.SelectedIndex = 0;
         preset.SelectedIndexChanged += (_, _) =>
         {
-            if (preset.SelectedItem is ClipPreset p) ApplyArea(p.Bounds, p.Name);
+            if (preset.SelectedItem is ClipPreset p) ApplyArea(p.Box, p.Name);
         };
         areaRow.Controls.Add(preset, 1, 0);
 

@@ -13,6 +13,14 @@ public sealed class SliceJob : Job
     public override string TypeName => "切片";
     public override string Display => $"{Path.GetFileName(InputPath)} → {OutputDirectory}";
 
+    public override string ParametersJson => System.Text.Json.JsonSerializer.Serialize(new
+    {
+        kind = "slice",
+        input = InputPath,
+        output = OutputDirectory,
+        maxZoom = MaxZoom,
+    });
+
     public override JobResult Execute(
         CtbHome ctbHome,
         Action<double> onProgress,

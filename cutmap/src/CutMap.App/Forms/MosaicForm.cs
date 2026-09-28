@@ -27,6 +27,7 @@ public sealed class MosaicForm : Form
     private readonly Button _pickBoundary = new();
     private readonly Label _boundarySummary = new();
     private readonly BoundaryStore _boundaryStore = BoundaryStore.Locate();
+    private readonly PresetStore _presets = new();
     private IReadOnlyList<BoundaryFeature> _boundaries = [];
 
     private readonly List<RasterInfo> _infos = [];
@@ -48,7 +49,7 @@ public sealed class MosaicForm : Form
     /// 预填的输入文件。用于「下载完这批 DEM → 继续处理」这条路径（FR-06），
     /// 免得用户刚下载完又得手动把 30 幅一个个选回来。
     /// </param>
-    public MosaicForm(IReadOnlyList<string>? initialInputs = null)
+    public MosaicForm(IReadOnlyList<string>? initialInputs = null, string? initialOutput = null)
     {
         Text = "新建拼接裁剪任务";
         StartPosition = FormStartPosition.CenterParent;
@@ -57,7 +58,7 @@ public sealed class MosaicForm : Form
         Font = new Font("Microsoft YaHei UI", 9F);
 
         BuildLayout();
-        ApplyPreset(BuiltInPresets.Chongqing);
+        ApplyPreset(PresetStore.Chongqing);
 
         foreach (var path in initialInputs ?? [])
         {
@@ -70,6 +71,7 @@ public sealed class MosaicForm : Form
                 // 预填路径里有读不了的，跳过即可——用户还能手动添加。
             }
         }
+        if (initialOutput is not null) _output.Text = initialOutput;
         if (_infos.Count > 0 && string.IsNullOrWhiteSpace(_output.Text))
         {
             var first = Path.GetDirectoryName(_infos[0].Path) ?? "";
@@ -137,7 +139,7 @@ public sealed class MosaicForm : Form
         range.Controls.Add(new Label { Text = "预设：", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 0);
         _preset.DropDownStyle = ComboBoxStyle.DropDownList;
         _preset.Width = 200;
-        foreach (var p in BuiltInPresets.All) _preset.Items.Add(p);
+        foreach (var p in _presets.ClipPresets) _preset.Items.Add(p);
         _preset.SelectedIndex = 0;
         _preset.SelectedIndexChanged += (_, _) =>
         {
@@ -145,6 +147,9 @@ public sealed class MosaicForm : Form
             if (_preset.SelectedItem is ClipPreset p) ApplyPreset(p);
         };
         range.Controls.Add(_preset, 1, 0);
+        var managePresets = new Button { Text = "管理…", Width = 64 };
+        managePresets.Click += (_, _) => ManagePresets();
+        range.Controls.Add(managePresets, 3, 0);
         range.SetColumnSpan(_preset, 2);
 
         for (var i = 0; i < 4; i++)
@@ -298,10 +303,10 @@ public sealed class MosaicForm : Form
     private void ApplyPreset(ClipPreset preset)
     {
         _suppressPresetEvent = true;
-        _bounds[0].Text = preset.Bounds.West.ToString(CultureInfo.InvariantCulture);
-        _bounds[1].Text = preset.Bounds.South.ToString(CultureInfo.InvariantCulture);
-        _bounds[2].Text = preset.Bounds.East.ToString(CultureInfo.InvariantCulture);
-        _bounds[3].Text = preset.Bounds.North.ToString(CultureInfo.InvariantCulture);
+        _bounds[0].Text = preset.Box.West.ToString(CultureInfo.InvariantCulture);
+        _bounds[1].Text = preset.Box.South.ToString(CultureInfo.InvariantCulture);
+        _bounds[2].Text = preset.Box.East.ToString(CultureInfo.InvariantCulture);
+        _bounds[3].Text = preset.Box.North.ToString(CultureInfo.InvariantCulture);
         _suppressPresetEvent = false;
         UpdateCoverage();
     }
@@ -367,6 +372,19 @@ public sealed class MosaicForm : Form
 
         SetCoverage($"覆盖检查通过。{coverage.Describe()}", Color.DarkGreen);
         _ok.Enabled = !string.IsNullOrWhiteSpace(_output.Text);
+    }
+
+    private void ManagePresets()
+    {
+        using var dialog = new PresetForm(_presets);
+        dialog.ShowDialog(this);
+
+        // 预设可能被增删改过，重建下拉并尽量保持当前选择。
+        var previousId = (_preset.SelectedItem as ClipPreset)?.Id;
+        _preset.Items.Clear();
+        foreach (var p in _presets.ClipPresets) _preset.Items.Add(p);
+        var restored = _presets.ClipPresets.FirstOrDefault(p => p.Id == previousId);
+        _preset.SelectedIndex = restored is not null ? _preset.Items.IndexOf(restored) : 0;
     }
 
     private void PickBoundary()

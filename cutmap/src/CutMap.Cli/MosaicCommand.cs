@@ -20,7 +20,7 @@ internal static class MosaicCommand
     {
         inputDir ??= Path.Combine(repoRoot, "data", "inputs", "dem");
         outputPath ??= Path.Combine(repoRoot, "cutmap", "_gate", "warp", "chongqing_dem.tif");
-        var target = ParseBBox(bboxArg) ?? BuiltInPresets.Chongqing.Bounds;
+        var target = ParseBBox(bboxArg) ?? PresetStore.Chongqing.Box;
 
         if (!Directory.Exists(inputDir))
         {
@@ -34,7 +34,7 @@ internal static class MosaicCommand
         }
 
         var sources = Directory.GetFiles(inputDir, "*.tif").OrderBy(p => p, StringComparer.Ordinal).ToArray();
-        Console.WriteLine($"输入 {sources.Length} 幅，目标范围 {target}（{BuiltInPresets.Chongqing.Name} 预设）");
+        Console.WriteLine($"输入 {sources.Length} 幅，目标范围 {target}（{PresetStore.Chongqing.Name} 预设）");
 
         var ok = true;
 

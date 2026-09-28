@@ -48,3 +48,10 @@ baseline/**  -text
 # 源码走 LF，方便 diff。Python 不关心，但统一的 diff 更干净。
 *.py         text eol=lf
 *.md         text eol=lf
+
+# C# 走 CRLF：这是本机唯一的目标平台（NFR-05 不支持非 Windows），
+# VS/dotnet 默认按 CRLF 写盘。不钉死的话，core.autocrlf=true 会让
+# 每次检出都重写一遍工作区，diff 里全是假改动。
+*.cs         text eol=crlf
+*.csproj     text eol=crlf
+*.sln        text eol=crlf

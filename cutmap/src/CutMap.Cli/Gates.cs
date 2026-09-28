@@ -2,6 +2,7 @@
 using System.Text.RegularExpressions;
 using CutMap.Core.Geo;
 using CutMap.Core.Tools;
+using CutMap.Core.Terrain;
 using OSGeo.GDAL;
 
 namespace CutMap.Cli;
@@ -179,6 +180,89 @@ internal static class Gates
 
         Console.WriteLine();
         Console.WriteLine(ok ? "PASS  闸门二：ctb-tile 子进程可用且失败可检出" : "FAIL  闸门二");
+        return ok ? 0 : 1;
+    }
+
+    /// <summary>
+    /// 闸门三：瓦片网格算术对着基线的 tile_counts.txt 逐层核。
+    ///
+    /// 这道闸门的意义在于：逐层计数将用来**核对 ctb-tile 自己的输出**。
+    /// 如果这里的算式与工具差一行一列，对账就会把好产物判成坏的（或反过来），
+    /// 所以它必须先被基线证明是对的，才有资格去证明别人。
+    /// </summary>
+    public static int TileGridGate(string repoRoot)
+    {
+        var ok = true;
+
+        // ---- 一、四组标定：公式对参考层级的推算 ----
+        Console.WriteLine("参考层级公式（对照 baseline/maxzoom_calibration/calibration_results.txt）");
+        (double PixelDeg, int Expected)[] calibration =
+        [
+            (1.0 / 7200, 15),
+            (1.0 / 3600, 14),
+            (1.0 / 1800, 13),
+            (1.0 / 1200, 12),
+        ];
+        foreach (var (pixelDeg, expected) in calibration)
+        {
+            var actual = CtbGrid.ReferenceMaxZoom(pixelDeg);
+            ok &= Check($"像元 {pixelDeg * 3600:F1} 角秒", actual.ToString(), expected.ToString(),
+                        actual == expected);
+        }
+
+        // ---- 二、逐层瓦片数：对照 tile_counts.txt ----
+        Console.WriteLine();
+        var countsFile = Path.Combine(repoRoot, "baseline", "manifests", "tile_counts.txt");
+        if (!File.Exists(countsFile))
+        {
+            Console.Error.WriteLine($"FAIL  找不到 {countsFile}");
+            return 1;
+        }
+
+        var expectedCounts = new Dictionary<int, long>();
+        long expectedTotal = 0;
+        foreach (var line in File.ReadAllLines(countsFile))
+        {
+            var parts = line.Split(':', 2);
+            if (parts.Length != 2) continue;
+            var key = parts[0].Trim();
+            if (!long.TryParse(parts[1].Trim(), out var value)) continue;
+
+            if (key.StartsWith("zoom", StringComparison.Ordinal) &&
+                int.TryParse(key.AsSpan(4), out var z))
+                expectedCounts[z] = value;
+            else if (key == "total")
+                expectedTotal = value;
+        }
+
+        // 教程 §4.2 的裁剪范围（重庆全域预设）。
+        var chongqing = new BBox(105.3, 28.1, 110.2, 32.2);
+        var estimate = CtbGrid.Estimate(chongqing, 14);
+
+        Console.WriteLine($"重庆全域 {chongqing}，最深 {estimate.MaxZoom} 级");
+        foreach (var (zoom, expected) in expectedCounts.OrderBy(kv => kv.Key))
+        {
+            var actual = zoom < estimate.PerZoom.Length ? estimate.PerZoom[zoom] : 0;
+            ok &= Check($"zoom {zoom,2}", actual.ToString("N0"), expected.ToString("N0"), actual == expected);
+        }
+        ok &= Check("合计", estimate.Total.ToString("N0"), expectedTotal.ToString("N0"),
+                    estimate.Total == expectedTotal);
+
+        Console.WriteLine($"  {estimate.Summary()}");
+        Console.WriteLine($"  （教程 §5.4 记的是 223,496，基线实测 223,495——教程多算了一个，疑为把 layer.json 计入）");
+
+        // ---- 三、护栏 ----
+        Console.WriteLine();
+        var over = CtbGrid.Estimate(new BBox(-180, -90, 180, 90), 12);
+        var rejection = CtbGrid.ValidateCost(over);
+        ok &= Check("护栏拒绝失控输入", rejection is null ? "未拒绝（危险）" : "已拒绝", "已拒绝",
+                    rejection is not null);
+        ok &= Check("护栏放过基线本身", CtbGrid.ValidateCost(estimate) is null ? "放过" : "误拒", "放过",
+                    CtbGrid.ValidateCost(estimate) is null);
+        if (rejection is not null) Console.WriteLine($"  拒绝理由: {rejection}");
+
+        Console.WriteLine();
+        Console.WriteLine(ok ? "PASS  闸门三：瓦片网格算术与基线一致" : "FAIL  闸门三");
         return ok ? 0 : 1;
     }
 

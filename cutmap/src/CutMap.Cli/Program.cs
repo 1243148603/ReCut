@@ -33,6 +33,17 @@ internal static class Program
             case "ctb-gate":
                 return Gates.CtbGate(args.Length > 1 ? args[1] : @"D:\Map");
 
+            case "grid-gate":
+                return Gates.TileGridGate(args.Length > 1 ? args[1] : @"D:\Map");
+
+            case "slice":
+            {
+                if (args.Length < 2) return Usage();
+                var repo = @"D:\Map";
+                int? maxZoom = args.Length > 3 ? int.Parse(args[3]) : null;
+                return SliceCommand.Run(repo, args[1], args.Length > 2 ? args[2] : null, maxZoom);
+            }
+
             default:
                 return Usage();
         }

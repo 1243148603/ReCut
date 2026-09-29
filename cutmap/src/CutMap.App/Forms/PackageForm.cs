@@ -50,9 +50,23 @@ public sealed class PackageForm : ThemedForm
     {
         Text = "打包 / 导出";
         StartPosition = FormStartPosition.CenterParent;
-        FormLayout.FitToContent(this, new Size(680, 460));
 
-        BuildLayout();
+        var root = BuildLayout();
+
+        // **高度按内容兜底。** 写死 460 时最后那行按钮会探出窗体底边
+        // （自检实测 666×466 > 680×460），按钮下缘被切掉一截。
+        // 用根面板的首选高度定，内容以后再增减也不用回来改这个数字。
+        FormLayout.FitToContent(this, new Size(680, Math.Max(460, root.PreferredSize.Height)));
+
+        // **校验要跟着输入走。** 原来只在勾选框变化时算一次，于是两种最常见的操作
+        // 都会卡死：先勾选（路径还空着）再填路径、或者开着窗口等后台切片任务把
+        // 瓦片目录写出来——两者之后都没有事件触发重算，提示停在"瓦片目录不存在"，
+        // 开始打包永远点不亮（用户实际卡在这：目录已经在了，按钮还是灰的）。
+        _tilesDir.TextChanged += (_, _) => UpdateEnabled();
+        _tifPath.TextChanged += (_, _) => UpdateEnabled();
+        _output.TextChanged += (_, _) => UpdateEnabled();
+        // 窗口开着的期间"世界"也会变：切片任务跑完，瓦片目录才出现。
+        Activated += (_, _) => UpdateEnabled();
 
         if (initialTiles is not null) { _tilesDir.Text = initialTiles; _wantTiles.Checked = true; }
         if (initialTif is not null) { _tifPath.Text = initialTif; _wantAlgo.Checked = true; }
@@ -69,9 +83,17 @@ public sealed class PackageForm : ThemedForm
         UpdateEnabled();
     }
 
-    private void BuildLayout()
+    private TableLayoutPanel BuildLayout()
     {
         var root = FormLayout.Root();
+
+        // 勾选框自己的文字。四个框是两个独立开关 + 两个独立的"要不要打成 zip"，
+        // 文案各自标清楚——**曾经这里一个 Text 都没设**，界面上只有四个空方框，
+        // 用户根本不知道在勾什么（截图反馈："要哪些产物"下面全是空白）。
+        _wantTiles.Text = "前端瓦片（Cesium 地形切片）";
+        _zipTiles.Text = "打成 zip";
+        _wantAlgo.Text = "算法数据（裁剪 GeoTIFF）";
+        _zipAlgo.Text = "打成 zip";
 
         // ---- 要哪些产物 ----
         // 每行一个独立小网格、**不用跨列**。跨列（SetColumnSpan）跟"按顺序占列"
@@ -116,6 +138,7 @@ public sealed class PackageForm : ThemedForm
         Controls.Add(root);
         AcceptButton = _ok;
         CancelButton = cancel;
+        return root;
     }
 
     /// <summary>两个勾选框一行：左占满、右固定宽。</summary>

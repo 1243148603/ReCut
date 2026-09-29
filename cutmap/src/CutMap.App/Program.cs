@@ -18,6 +18,11 @@ internal static class Program
             RunLayoutCheck();
             return;
         }
+        if (args.Contains("--layout-dump", StringComparer.OrdinalIgnoreCase))
+        {
+            RunLayoutDump(args);
+            return;
+        }
 
         // PerMonitorV2：多显示器、不同缩放比例下切换时布局不糊。
         // ApplicationConfiguration.Initialize() 已按 csproj 设了默认值，
@@ -50,6 +55,72 @@ internal static class Program
     }
 
     /// <summary>
+    /// 排错用：把指定窗体排版后的控件树与一张渲染图写到临时目录。
+    ///
+    /// **为什么不往控制台打**：这个 exe 是 WinExe，`AttachConsole` 在
+    /// mintty / 重定向下拿不到句柄，输出会静默消失（实测：进程挂住、文件为空）。
+    /// 写文件不依赖控制台，渲染图还能直接看"到底长什么样"。
+    /// </summary>
+    private static void RunLayoutDump(string[] args)
+    {
+        ApplicationConfiguration.Initialize();
+
+        var rest = args.SkipWhile(a => !a.Equals("--layout-dump", StringComparison.OrdinalIgnoreCase))
+                       .Skip(1).ToArray();
+        var which = rest.FirstOrDefault() ?? "pack";
+        // 可选参数：拼接窗口的预填输入（复现"覆盖检查说什么"）；
+        // 打包窗口的三个路径——瓦片目录 / GeoTIFF / 输出目录（复现"按钮为什么点不亮"）。
+        var prefill = rest.Skip(1).FirstOrDefault();
+        var second = rest.Skip(2).FirstOrDefault();
+        var third = rest.Skip(3).FirstOrDefault();
+
+        using var target = which switch
+        {
+            "pack" => (Form)new PackageForm(prefill, second, third),
+            "choose" => new TaskChooserForm(),
+            // --outside：把目标挪到输入之外，验证"真缺口仍然被拦住"（负向）。
+            "mosaic" => new MosaicForm(prefill is null ? null : [prefill], null, null,
+                args.Contains("--outside", StringComparer.OrdinalIgnoreCase)
+                    ? new TaskPreset { Id = "outside", Name = "负向", Bounds = [106.3, 29.1, 111.2, 33.2] }
+                    : null),
+            "slice" => new SliceForm(),
+            "download" => new DownloadForm(),
+            "boundary" => new BoundaryPickerForm(BoundaryStore.Locate()),
+            "history" => new HistoryForm(new HistoryStore()),
+            "preset" => new PresetForm(new PresetStore()),
+            "main" => new MainForm(CtbHome.Locate() ?? throw new InvalidOperationException("没找到 ctb 工具包")),
+            _ => new PackageForm(),
+        };
+
+        // **必须在屏幕外真正 Show 一次。** Theme.Apply 挂在 OnLoad 上，会把字体换成
+        // 雅黑并触发 AutoScaleMode.Font 的整窗重缩放——不 Show 就量不到这一步，
+        // 量到的是"换字体之前"的假数据（第一次 dump 就栽在这）。DrawToBitmap 也只
+        // 画已经显示过的控件树，没 Show 过的窗体渲染出来只有背景。
+        var probe = $"probe: 构造后 dpi={target.DeviceDpi} design={target.AutoScaleDimensions} current={target.CurrentAutoScaleDimensions} size={target.ClientSize}\n";
+
+        target.StartPosition = FormStartPosition.Manual;
+        target.Location = new Point(-4000, -4000);
+        target.ShowInTaskbar = false;
+        target.Show();
+        Application.DoEvents();
+
+        probe += $"probe: Show 后 dpi={target.DeviceDpi} design={target.AutoScaleDimensions} current={target.CurrentAutoScaleDimensions} size={target.ClientSize}\n";
+
+        var outDir = Path.Combine(Path.GetTempPath(), "cutmap-layout");
+        Directory.CreateDirectory(outDir);
+        var text = probe + LayoutCheck.Dump(which, target);
+        text += $"\n--- Show 之后 ClientSize={target.ClientSize.Width}x{target.ClientSize.Height}\n";
+        File.WriteAllText(Path.Combine(outDir, which + ".txt"), text);
+
+        using var bitmap = new Bitmap(target.Width, target.Height);
+        target.DrawToBitmap(bitmap, new Rectangle(0, 0, target.Width, target.Height));
+        bitmap.Save(Path.Combine(outDir, which + ".png"), System.Drawing.Imaging.ImageFormat.Png);
+
+        target.Close();
+        Environment.Exit(0);
+    }
+
+    /// <summary>
     /// 布局自检：把每个窗体造出来、强制走一遍排版，报告硬错误。
     ///
     /// 存在的理由：这台机器上截图工具不可用，排版只能靠程序化判定。
@@ -59,6 +130,9 @@ internal static class Program
     private static void RunLayoutCheck()
     {
         AttachConsole(-1);
+        // 报告是中文。控制台默认走 GBK 代码页，重定向到文件后就是乱码
+        // （实测：报告读不了，等于没输出）。固定成 UTF-8，管它是哪个终端。
+        try { Console.OutputEncoding = System.Text.Encoding.UTF8; } catch (IOException) { }
 
         var cases = new List<(string Name, Func<Form> Make)>
         {
@@ -75,6 +149,12 @@ internal static class Program
             ("下载源编辑", () => (Form)new SourceEditForm(null)),
             ("裁剪预设编辑", () => (Form)new ClipPresetEditForm(null)),
         };
+
+        // 主窗口也查。它曾经因为一句 toolbar.BringToFront() 把停靠顺序弄反：
+        // 工具条压住任务列表的表头 43 像素，而自检里没有它，就一直没人报。
+        // 需要 ctb 工具包在位才构造得出来，不在就跳过（不把环境问题报成排版问题）。
+        var ctbHome = CtbHome.Locate();
+        if (ctbHome is not null) cases.Add(("主窗口", () => new MainForm(ctbHome)));
 
         var problems = new List<LayoutCheck.Problem>();
         foreach (var (name, make) in cases)

@@ -148,8 +148,9 @@ public sealed class MainForm : ThemedForm
             Padding = new Padding(6, 0, 0, 0),
             BackColor = SystemColors.ControlLight,
         };
+        // 同样不 BringToFront：填充分率先加、边条后加，停靠顺序本来就是对的；
+        // 一提 z 序，填充控件就把整块抢回去，标题压在日志正文上（自检实测重叠 1104×22）。
         split.Panel2.Controls.Add(logHeader);
-        logHeader.BringToFront();
 
         _progress.Visible = false;
         _progress.Width = 180;
@@ -159,10 +160,13 @@ public sealed class MainForm : ThemedForm
         statusStrip.Items.Add(_status);
         statusStrip.Items.Add(_progress);
 
+        // 顺序不能动：填充的先加、边条的后加（WinForms 从后往前停靠）。
+        // **不要在这里 BringToFront()**：它把工具条挪到 z 序最前，停靠顺序就反了——
+        // 分割容器从 y=0 开始铺，工具条再压在上面 43px，任务列表的表头被盖住
+        // （自检实测：分割容器 [0,0 1647x995]，正确应为 [0,43 …]）。
         Controls.Add(split);
         Controls.Add(toolbar);
         Controls.Add(statusStrip);
-        toolbar.BringToFront();
     }
 
     // ---------------------------------------------------------------- 新建

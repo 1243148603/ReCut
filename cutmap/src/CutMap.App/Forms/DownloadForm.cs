@@ -91,6 +91,9 @@ public sealed class DownloadForm : ThemedForm
         sourceRow.Controls.Add(new Label { Text = "下载源：", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 0);
         _source.DropDownStyle = ComboBoxStyle.DropDownList;
         _source.Width = 340;
+        // 不设 DisplayMember 就会走 record 的默认 ToString，
+        // 下拉里显示成 "DownloadSource { Id = copernicus-official, Name = Cop…"（截图反馈）。
+        _source.DisplayMember = nameof(DownloadSource.Name);
         _source.SelectedIndexChanged += (_, _) => UpdatePreview();
         sourceRow.Controls.Add(_source, 1, 0);
         var manage = new Button { Text = "管理源…", Width = 88 };
@@ -154,6 +157,9 @@ public sealed class DownloadForm : ThemedForm
         var saveRow = new TableLayoutPanel { Dock = DockStyle.Top, ColumnCount = 3, RowCount = 2, AutoSize = true };
         saveRow.Controls.Add(new Label { Text = "保存到：", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 0);
         _saveDir.Dock = DockStyle.Fill;
+        // 保存目录是开始按钮的使能条件之一：浏览/改写之后必须重算，
+        // 否则按钮停在"目录还空着"的状态点不亮（与打包窗口同一类问题）。
+        _saveDir.TextChanged += (_, _) => UpdatePreview();
         saveRow.Controls.Add(_saveDir, 1, 0);
         var browse = new Button { Text = "浏览…", Width = 80 };
         browse.Click += (_, _) =>

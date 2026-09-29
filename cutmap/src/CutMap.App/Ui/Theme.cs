@@ -64,8 +64,9 @@ internal static class Theme
         form.BackColor = Background;
         form.ForeColor = Text;
         form.Font = Body;
-        // 按字体缩放而不是按像素：不同 DPI 下布局才不会散。
-        form.AutoScaleMode = AutoScaleMode.Font;
+        // 缩放模式在 ThemedForm 的构造函数里定（AutoScaleMode.Dpi + 设计尺寸 96）。
+        // **不要在这里改成 Font 模式**：这里是 OnLoad，缩放早就在建句柄时跑完了，
+        // 改模式只会让下一次 DPI 变化用错系数。
         StyleChildren(form);
     }
 

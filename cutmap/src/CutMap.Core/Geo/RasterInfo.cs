@@ -23,10 +23,11 @@ public sealed class RasterException(string message, Exception? inner = null)
 ///     原点存成了中心，所以 N28_E105.tif 的 gt[0] 是 104.999861（= 105 − 半个
 ///     像元）而不是 105.0。它照样铺满整度，只是要多做半像元修正。
 ///
-/// 所以 <see cref="Extent"/>（GDAL 口径，用于算瓦片）与
-/// <see cref="PixelCentreExtent"/>（半像元外扩，用于覆盖判断）是**两个不同的东西**，
-/// 不能混用。README §3 记录过把两者混起来的后果：每幅 1° 分幅被算成 1.000278°，
-/// 多出的那一像素全在东边和南边——正是覆盖闸门最危险的方向。
+/// 既然字节里分不出来，就**统一用 <see cref="Extent"/>（GDAL 口径）**——它是文件
+/// 声明的、gdalwarp 与 CTB 实际会用的范围——并把半个像元当作两种口径的固有
+/// 不确定度，交给用它的地方处理（覆盖判断在 <see cref="Coverage"/> 里留了
+/// 半个像元的余量）。反过来假设"原点一定是像素中心"曾经造成过误判：
+/// gdalwarp 产物被向内缩了半个像元，"把文件裁成它自己"会被覆盖闸门拦下。
 /// </summary>
 public sealed record RasterInfo(
     string Path,
@@ -48,33 +49,14 @@ public sealed record RasterInfo(
     public bool HasProjection => !string.IsNullOrWhiteSpace(ProjectionWkt);
 
     /// <summary>
-    /// GDAL 口径的范围（外边缘）。**这是 CTB 实际会去切的范围**，
-    /// 因此瓦片数预估必须用它，不能用半像元外扩的那个。
+    /// GDAL 口径的范围（外边缘）。**这是 CTB 实际会去切的范围**，也是文件声明的
+    /// footprint——瓦片数预估、覆盖判断都用它。
     /// </summary>
     public BBox Extent => new(
         GeoTransform[0],
         GeoTransform[3] + Height * GeoTransform[5],
         GeoTransform[0] + Width * GeoTransform[1],
         GeoTransform[3]);
-
-    /// <summary>
-    /// 半像元外扩后的范围（像素中心口径）。用于**覆盖判断**：
-    /// 判断一组输入能否盖住目标区域时，要把提供方按中心口径存的原点还原成真实外框。
-    /// 不要拿它去算瓦片数。
-    /// </summary>
-    public BBox PixelCentreExtent
-    {
-        get
-        {
-            var halfX = PixelSizeX / 2.0;
-            var halfY = PixelSizeY / 2.0;
-            return new BBox(
-                GeoTransform[0] - halfX,
-                GeoTransform[3] + (Height - 1) * GeoTransform[5] - halfY,
-                GeoTransform[0] + (Width - 1) * GeoTransform[1] + halfX,
-                GeoTransform[3] + halfY);
-        }
-    }
 
     /// <summary>EPSG 代码；非地理/投影坐标系或无法识别时为 null。</summary>
     public int? EpsgCode

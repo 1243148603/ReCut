@@ -8,10 +8,19 @@ namespace CutMap.Core.Geo;
 /// 真实高程编码进去（TerrainTiler 的编码是 <c>(米 + 1000) × 5</c>，nodata 落在
 /// 0 m 附近），前端看到的是平坦台地而不是空洞。查出来比让它静默跑完好得多。
 ///
-/// **用哪个范围。** 输入侧用 <see cref="RasterInfo.PixelCentreExtent"/>，
-/// 即按"原点存的是像素中心"还原出的真实外框（README §3）。这是产品的实际覆盖，
-/// 也是覆盖判断该问的问题。不要换成 <see cref="RasterInfo.Extent"/>——那是 GDAL
-/// 的像素外边缘口径，是**算瓦片数**用的，两者差半个像元（约 15 m）。
+/// **用哪个范围，为什么留半个像元的余量。** 输入侧用 <see cref="RasterInfo.Extent"/>
+/// ——GDAL 的像素外边缘口径，文件声明的、gdalwarp 与 CTB 实际会用的范围。但
+/// geotransform 的原点存的是"外边缘"还是"像素中心"，**从文件字节里看不出来**：
+/// gdalwarp 写出的文件是外边缘口径，Copernicus GLO-30 的 COG 是像素中心口径，
+/// 两种口径给出的外框最多相差半个像元（README §3）。所以每边留半个像元的余量——
+/// 这以内的"缺口"是口径的不确定度，不是真的没数据（gdalwarp 对边缘半个像元会用
+/// 最近的样本补齐，不会留下 nodata）。
+///
+/// 曾经的做法是直接换用"按像素中心还原"的外框（PixelCentreExtent）。它只对
+/// GLO-30 的 COG 成立，对 gdalwarp 产物则把文件自己的外框向内缩了半个像元——
+/// 于是"把一幅 DEM 裁成它自己的范围"这种最普通的操作被报成
+/// "南边缺 0.0001°（约 15 m）。东边缺 0.0001°（约 14 m）"，开始按钮直接禁用
+/// （实测：data\outputs\terrain_tif\chongqing_dem.tif 配"重庆全域"预设）。
 /// </summary>
 public static class Coverage
 {
@@ -27,7 +36,7 @@ public static class Coverage
         double east = double.MinValue, north = double.MinValue;
         foreach (var info in inputs)
         {
-            var box = info.PixelCentreExtent;
+            var box = info.Extent;
             west = Math.Min(west, box.West);
             south = Math.Min(south, box.South);
             east = Math.Max(east, box.East);
@@ -36,21 +45,22 @@ public static class Coverage
 
         var union = new BBox(west, south, east, north);
 
-        // 只在真的有缺口时才算差值：浮点上"差 1e-15 度"不该被报成缺一条边。
-        const double tolerance = 1e-9;
+        // 半个像元的口径余量（+一个小的浮点余量，免得"差 1e-15 度"被报成缺一条边）。
+        var toleranceX = inputs.Max(i => i.PixelSizeX) / 2.0 + 1e-9;
+        var toleranceY = inputs.Max(i => i.PixelSizeY) / 2.0 + 1e-9;
         var westGap = Math.Max(0, union.West - target.West);
         var southGap = Math.Max(0, union.South - target.South);
         var eastGap = Math.Max(0, target.East - union.East);
         var northGap = Math.Max(0, target.North - union.North);
 
         List<string> problems = [];
-        if (union.West > target.West + tolerance)
+        if (union.West > target.West + toleranceX)
             problems.Add(Describe("西", westGap, MetresPerDegreeLon(target.South)));
-        if (union.South > target.South + tolerance)
+        if (union.South > target.South + toleranceY)
             problems.Add(Describe("南", southGap, MetresPerDegreeLat));
-        if (union.East < target.East - tolerance)
+        if (union.East < target.East - toleranceX)
             problems.Add(Describe("东", eastGap, MetresPerDegreeLon(target.South)));
-        if (union.North < target.North - tolerance)
+        if (union.North < target.North - toleranceY)
             problems.Add(Describe("北", northGap, MetresPerDegreeLat));
 
         var covered = problems.Count == 0;
@@ -72,7 +82,7 @@ public static class Coverage
     }
 }
 
-/// <param name="Union">输入的并集范围（像素中心口径）。</param>
+/// <param name="Union">输入的并集范围（GDAL 像素外边缘口径）。</param>
 /// <param name="WestGap">缺口大小（度）。0 表示该边盖住了。</param>
 public sealed record CoverageResult(
     bool Covered,

@@ -39,10 +39,13 @@ public sealed class BoundaryPickerForm : ThemedForm
         _tree.HideSelection = false;
         _tree.AfterCheck += (_, _) => UpdateStatus();
 
+        // 高度要留给按钮：Theme 会把按钮统一抬到 30px 高（在 OnLoad 里），
+        // 行高只有 34 时，"导入…"按钮被上下裁掉一截（自检实测 Bottom 39 > 34）。
+        // 6(上留白) + 30(按钮) + 余量 = 44。
         var searchRow = new TableLayoutPanel
         {
             Dock = DockStyle.Top,
-            Height = 34,
+            Height = 44,
             ColumnCount = 3,
             Padding = new Padding(8, 6, 8, 0),
         };

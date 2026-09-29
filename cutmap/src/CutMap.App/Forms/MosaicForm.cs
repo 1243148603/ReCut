@@ -138,7 +138,7 @@ public sealed class MosaicForm : ThemedForm
         _inputs.Columns.Add("尺寸", 90);
         _inputs.Columns.Add("坐标系", 80);
         _inputs.Columns.Add("像元(角秒)", 80);
-        _inputs.Columns.Add("范围（像素中心口径）", 380);
+        _inputs.Columns.Add("范围（GDAL 外边缘）", 380);
 
         // Dock=Right 配 AutoSize 时宽度算不出来（实测报 102、实际需要 266），
         // 于是压在旁边的列表上。改放列表下方右对齐——按钮条本来也不需要占一列。
@@ -161,16 +161,18 @@ public sealed class MosaicForm : ThemedForm
         inputButtons.Controls.Add(remove);
         inputButtons.Controls.Add(clear);
 
-        // 固定高度：输入列表需要一个稳定的可视区域。用 Dock=Fill 的话，
-        // 在 AutoSize 的分组框里高度会被算成 0，下面的按钮条就压在列表上。
-        var inputPanel = new Panel { Dock = DockStyle.Top, Height = 220 };
+        // 分组框**不设 AutoSize**：它所在的行是 Percent(100)，分组框铺满整行，
+        // 列表再 Dock=Fill 撑满——列表高度跟着窗口走。
+        // （反过来"分组框 AutoSize + 列表 Dock=Fill"是不行的：AutoSize 问子控件要
+        // 首选高度，而 Dock=Fill 的控件量出来是 0，分组框会塌成一条。）
+        var inputPanel = new Panel { Dock = DockStyle.Fill };
         // 顺序不能动：填充的先加、边条的后加（WinForms 从后往前停靠）。
         // 曾经在这里加过 inputButtons.BringToFront()——它把按钮条挪到 z 序最前，
         // 停靠顺序就反了，列表抢占整块、按钮压在上面。
         inputPanel.Controls.Add(_inputs);
         inputPanel.Controls.Add(inputButtons);
 
-        var inputBox = new GroupBox { Text = "输入 DEM（可多选，多幅先拼接再裁剪）", Dock = DockStyle.Fill , AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink};
+        var inputBox = new GroupBox { Text = "输入 DEM（可多选，多幅先拼接再裁剪）", Dock = DockStyle.Fill };
         inputBox.Controls.Add(inputPanel);
         root.Controls.Add(inputBox, 0, 0);
 
@@ -181,12 +183,25 @@ public sealed class MosaicForm : ThemedForm
         root.Controls.Add(_inputSummary, 0, 1);
 
         // ---- 裁剪范围 ----
-        var rangeBox = new GroupBox { Text = "裁剪范围（WGS84 经纬度）", Dock = DockStyle.Fill , AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink};
-        var range = new TableLayoutPanel { Dock = DockStyle.Top, ColumnCount = 7, RowCount = 2, Padding = new Padding(8), AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink };
+        // 每行一个独立小网格、**不跨列**。
+        // 老写法是一整张 7 列表，预设下拉跨 2 列、管理按钮占第 3 列，然后西/南/东/北
+        // 四个标签又从第 2 列起按顺序排——标签直接压在下拉框和"管理…"上，页面上
+        // 看到的是"西 南 管理… 东 / 北 [四个框]"。列数多于实际用途时必然踩这个坑，
+        // 改成"一行一个网格"就不会：各自定义列，谁也不会撞到谁（PackageForm 同款）。
+        var rangeBox = new GroupBox { Text = "裁剪范围（WGS84 经纬度）", Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink };
+        var range = new TableLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            ColumnCount = 1,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Padding = new Padding(8),
+        };
+        range.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
 
-        range.Controls.Add(new Label { Text = "预设：", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 0);
+        var presetRow = FormLayout.Grid(FormLayout.Fixed(64), FormLayout.Fixed(236), FormLayout.Fixed(96));
         _preset.DropDownStyle = ComboBoxStyle.DropDownList;
-        _preset.Width = 200;
+        _preset.Width = 228;
         foreach (var p in _presets.ClipPresets) _preset.Items.Add(p);
         _preset.SelectedIndex = 0;
         _preset.SelectedIndexChanged += (_, _) =>
@@ -194,39 +209,37 @@ public sealed class MosaicForm : ThemedForm
             if (_suppressPresetEvent) return;
             if (_preset.SelectedItem is ClipPreset p) ApplyPreset(p);
         };
-        range.Controls.Add(_preset, 1, 0);
-        var managePresets = new Button { Text = "管理…", Width = 64 };
+        var managePresets = new Button { Text = "管理…", Width = 88 };
         managePresets.Click += (_, _) => ManagePresets();
-        range.Controls.Add(managePresets, 3, 0);
-        range.SetColumnSpan(_preset, 2);
+        presetRow.AddRow(new Label { Text = "预设：", AutoSize = true, Anchor = AnchorStyles.Left }, _preset, managePresets);
 
+        // 西/南/东/北 用 FormLayout.BoundsRow：等宽输入框横排、放不下自动换行，
+        // 不会像固定列那样把标签挤断。
         for (var i = 0; i < 4; i++)
         {
-            range.Controls.Add(
-                new Label { Text = BoundLabels[i], AutoSize = true, Anchor = AnchorStyles.Left }, i + 2, 0);
             var box = new TextBox { Width = 96, Text = "0" };
             box.TextChanged += (_, _) => UpdateCoverage();
             _bounds[i] = box;
-            range.Controls.Add(box, i + 2, 1);
         }
+        var boundsRow = FormLayout.BoundsRow(_bounds, BoundLabels);
 
+        var boundaryRow = FormLayout.Grid(FormLayout.Fixed(190), FormLayout.Fixed(112), FormLayout.Flexible());
         _useBoundary.Text = "按行政区划边界裁剪";
         _useBoundary.AutoSize = true;
+        _useBoundary.Anchor = AnchorStyles.Left;
         _useBoundary.CheckedChanged += (_, _) => UpdateEnabled();
-        range.Controls.Add(_useBoundary, 0, 2);
-        range.SetColumnSpan(_useBoundary, 2);
-
         _pickBoundary.Text = "选择边界…";
-        _pickBoundary.Width = 96;
+        _pickBoundary.Width = 104;
         _pickBoundary.Click += (_, _) => PickBoundary();
-        range.Controls.Add(_pickBoundary, 2, 2);
-        range.Controls.Add(_boundarySummary, 3, 2);
-        range.SetColumnSpan(_boundarySummary, 4);
         _boundarySummary.AutoEllipsis = true;
         _boundarySummary.ForeColor = SystemColors.GrayText;
+        _boundarySummary.Dock = DockStyle.Fill;
+        _boundarySummary.TextAlign = ContentAlignment.MiddleLeft;
+        boundaryRow.AddRow(_useBoundary, _pickBoundary, _boundarySummary);
 
-        for (var c = 0; c < 7; c++) range.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        range.RowCount = 3;
+        range.AddRow(presetRow);
+        range.AddRow(boundsRow);
+        range.AddRow(boundaryRow);
         rangeBox.Controls.Add(range);
         root.Controls.Add(rangeBox, 0, 2);
 
@@ -236,6 +249,9 @@ public sealed class MosaicForm : ThemedForm
 
         output.Controls.Add(new Label { Text = "输出文件：", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 0);
         _output.Dock = DockStyle.Fill;
+        // 输出路径是开始按钮的使能条件之一：手填/浏览之后都要重算，
+        // 否则按钮停在"路径还空着"的状态点不亮（与打包窗口同一类问题）。
+        _output.TextChanged += (_, _) => UpdateCoverage();
         output.Controls.Add(_output, 1, 0);
         output.SetColumnSpan(_output, 2);
         var browse = new Button { Text = "浏览…", Width = 80 };
@@ -330,7 +346,7 @@ public sealed class MosaicForm : ThemedForm
         _inputs.Items.Clear();
         foreach (var info in _infos)
         {
-            var ext = info.PixelCentreExtent;
+            var ext = info.Extent;
             var item = new ListViewItem(Path.GetFileName(info.Path)) { Tag = info };
             item.SubItems.Add($"{info.Width}×{info.Height}");
             item.SubItems.Add(info.EpsgCode is { } code ? $"EPSG:{code}" : "无/未识别");
@@ -373,7 +389,11 @@ public sealed class MosaicForm : ThemedForm
             Filter = "GeoTIFF (*.tif)|*.tif",
             FileName = "dem_clipped.tif",
         };
-        if (dialog.ShowDialog(this) == DialogResult.OK) _output.Text = dialog.FileName;
+        if (dialog.ShowDialog(this) == DialogResult.OK)
+        {
+            _output.Text = dialog.FileName;
+            UpdateCoverage();   // 输出路径是开始按钮的使能条件之一，改完要重算
+        }
     }
 
     /// <summary>

@@ -195,7 +195,10 @@ public sealed class SliceForm : ThemedForm
     {
         using var dialog = new FolderBrowserDialog { Description = "选择瓦片输出目录" };
         if (dialog.ShowDialog(this) == DialogResult.OK)
+        {
             _output.Text = dialog.SelectedPath;
+            UpdateEstimate();   // 输出目录是开始按钮的使能条件之一，改完要重算
+        }
     }
 
     /// <summary>输入或层级一变就重算。FR-02 的护栏在这里生效：失控的输入直接禁用提交。</summary>

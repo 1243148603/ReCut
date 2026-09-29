@@ -1,5 +1,6 @@
 using CutMap.Core.Geo;
 using CutMap.Core.Terrain;
+using CutMap.App.Ui;
 
 namespace CutMap.App.Forms;
 
@@ -10,7 +11,7 @@ namespace CutMap.App.Forms;
 /// 并对失控的输入**拒绝提交**。两者都建立在 <see cref="CtbGrid"/> 的精确计数上，
 /// 而不是估算——计数是精确的，没理由近似。
 /// </summary>
-public sealed class SliceForm : Form
+public sealed class SliceForm : ThemedForm
 {
     private readonly TextBox _input = new();
     private readonly TextBox _output = new();
@@ -97,7 +98,7 @@ public sealed class SliceForm : Form
         // ---- 层级 ----
         layout.Controls.Add(new Label { Text = "最深层级：", Anchor = AnchorStyles.Left, AutoSize = true }, 0, 3);
         var zoomRow = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, Margin = new Padding(0) };
-        _autoZoom.Text = "自动（与 ctb-tile 省略 -s 的行为一致）";
+        _autoZoom.Text = "自动（按栅格分辨率推算）";
         _autoZoom.Checked = true;
         _autoZoom.AutoSize = true;
         _autoZoom.CheckedChanged += (_, _) =>
@@ -130,6 +131,7 @@ public sealed class SliceForm : Form
             AutoSize = true,
         };
         var cancel = new Button { Text = "取消", DialogResult = DialogResult.Cancel, Width = 84 };
+        Theme.MarkPrimary(_ok);
         _ok.Text = "开始切片";
         _ok.Width = 96;
         _ok.Enabled = false;
@@ -156,7 +158,7 @@ public sealed class SliceForm : Form
     {
         using var dialog = new OpenFileDialog
         {
-            Title = "选择 DEM（可多选；M2 支持多幅拼接）",
+            Title = "选择 DEM",
             Filter = "GeoTIFF (*.tif;*.tiff)|*.tif;*.tiff|所有文件 (*.*)|*.*",
             Multiselect = false,
         };

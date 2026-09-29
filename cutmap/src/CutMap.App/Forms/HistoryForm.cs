@@ -1,5 +1,6 @@
 using System.Text.Json;
 using CutMap.Core.Store;
+using CutMap.App.Ui;
 
 namespace CutMap.App.Forms;
 
@@ -10,7 +11,7 @@ namespace CutMap.App.Forms;
 /// PRD FR-09 说得很清楚：双击记录打开对应界面并回填，因为用户点重跑往往是想
 /// 改一个参数再跑（换个输出目录、换个层级），直接跑等于逼他再填一遍。
 /// </summary>
-public sealed class HistoryForm : Form
+public sealed class HistoryForm : ThemedForm
 {
     private readonly HistoryStore _store;
     private readonly ListView _list = new();

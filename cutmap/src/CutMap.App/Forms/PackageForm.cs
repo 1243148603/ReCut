@@ -1,4 +1,5 @@
 using CutMap.Core.Terrain;
+using CutMap.App.Ui;
 
 namespace CutMap.App.Forms;
 
@@ -9,7 +10,7 @@ namespace CutMap.App.Forms;
 /// 只勾算法产物时切片可以根本不跑（"我只要给算法的数据"），
 /// 只勾前端产物时不写 json（"我不想产物里混进算法侧的文件"）。
 /// </summary>
-public sealed class PackageForm : Form
+public sealed class PackageForm : ThemedForm
 {
     private readonly CheckBox _wantTiles = new();
     private readonly CheckBox _wantAlgo = new();
@@ -83,7 +84,7 @@ public sealed class PackageForm : Form
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
         // ---- 要哪几套产物 ----
-        var choose = new GroupBox { Text = "要哪些产物（FR-18）", Dock = DockStyle.Fill, Height = 132 };
+        var choose = new GroupBox { Text = "要哪些产物", Dock = DockStyle.Fill, Height = 132 };
         var chooseLayout = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
@@ -134,7 +135,7 @@ public sealed class PackageForm : Form
         root.Controls.Add(choose, 0, 0);
 
         // ---- layer.json 字段 ----
-        var layerBox = new GroupBox { Text = "layer.json（FR-03）", Dock = DockStyle.Fill, Height = 96 };
+        var layerBox = new GroupBox { Text = "layer.json", Dock = DockStyle.Fill, Height = 96 };
         var layerLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 2, Padding = new Padding(8) };
         layerLayout.Controls.Add(new Label { Text = "name：", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 0);
         _layerName.Text = "terrain";
@@ -183,6 +184,7 @@ public sealed class PackageForm : Form
             Padding = new Padding(12, 4, 12, 10),
         };
         var cancel = new Button { Text = "取消", DialogResult = DialogResult.Cancel, Width = 84 };
+        Theme.MarkPrimary(_ok);
         _ok.Text = "开始打包";
         _ok.Width = 96;
         _ok.Click += (_, _) => { DialogResult = DialogResult.OK; Close(); };

@@ -3,6 +3,7 @@ using CutMap.Core.Download;
 using CutMap.Core.Geo;
 using CutMap.Core.Store;
 using CutMap.Core.Vector;
+using CutMap.App.Ui;
 
 namespace CutMap.App.Forms;
 
@@ -13,7 +14,7 @@ namespace CutMap.App.Forms;
 /// 的写法（N{lat}，{lat}=29）不同，把教程那条 URL 原样粘进模板会拼出 "NN29"。
 /// 与其等下载全 404 再回头查，不如在拼的时候就把结果显示出来。
 /// </summary>
-public sealed class DownloadForm : Form
+public sealed class DownloadForm : ThemedForm
 {
     private readonly SourceStore _store = new();
     private readonly ComboBox _source = new();
@@ -178,6 +179,7 @@ public sealed class DownloadForm : Form
             Padding = new Padding(12, 4, 12, 10),
         };
         var cancel = new Button { Text = "取消", DialogResult = DialogResult.Cancel, Width = 84 };
+        Theme.MarkPrimary(_ok);
         _ok.Text = "开始下载";
         _ok.Width = 96;
         _ok.Click += (_, _) => { DialogResult = DialogResult.OK; Close(); };

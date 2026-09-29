@@ -1,4 +1,5 @@
 using CutMap.Core.Download;
+using CutMap.App.Ui;
 
 namespace CutMap.App.Forms;
 
@@ -8,7 +9,7 @@ namespace CutMap.App.Forms;
 /// 内置源**不可删除但可禁用**：它删掉之后，如果用户的镜像全挂了就没有任何可用源，
 /// 而"下不到数据"的原因会变得难判断。禁用足够表达"我暂时不用它"。
 /// </summary>
-public sealed class SourceEditorForm : Form
+public sealed class SourceEditorForm : ThemedForm
 {
     private readonly SourceStore _store;
     private readonly ListView _list = new();
@@ -159,7 +160,7 @@ public sealed class SourceEditorForm : Form
 }
 
 /// <summary>单条下载源的编辑框。</summary>
-public sealed class SourceEditForm : Form
+public sealed class SourceEditForm : ThemedForm
 {
     private readonly TextBox _name = new();
     private readonly TextBox _template = new();

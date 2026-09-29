@@ -1,6 +1,7 @@
 using System.Globalization;
 using CutMap.Core.Geo;
 using CutMap.Core.Store;
+using CutMap.App.Ui;
 
 namespace CutMap.App.Forms;
 
@@ -8,7 +9,7 @@ namespace CutMap.App.Forms;
 /// 单条任务预设的编辑框（FR-08）。字段覆盖 PRD 说的四项：
 /// 范围 / 切片参数 / layer.json 字段 / 导出选项。
 /// </summary>
-public sealed class TaskPresetEditForm : Form
+public sealed class TaskPresetEditForm : ThemedForm
 {
     private readonly TextBox _name = new();
     private readonly TextBox _description = new();
@@ -59,7 +60,7 @@ public sealed class TaskPresetEditForm : Form
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
         // ---- 名称与裁剪范围 ----
-        var clipBox = new GroupBox { Text = "裁剪范围（FR-07 矩形模式）", Dock = DockStyle.Fill, Height = 112 };
+        var clipBox = new GroupBox { Text = "裁剪范围", Dock = DockStyle.Fill, Height = 112 };
         var clip = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 3, Padding = new Padding(8) };
         clip.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 72));
         for (var c = 0; c < 3; c++) clip.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33));
@@ -90,7 +91,7 @@ public sealed class TaskPresetEditForm : Form
         root.Controls.Add(clipBox, 0, 0);
 
         // ---- 切片与 layer.json ----
-        var sliceBox = new GroupBox { Text = "切片与 layer.json（FR-02 / FR-03）", Dock = DockStyle.Fill, Height = 130 };
+        var sliceBox = new GroupBox { Text = "切片与 layer.json", Dock = DockStyle.Fill, Height = 130 };
         var slice = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 4, Padding = new Padding(8) };
 
         slice.Controls.Add(new Label { Text = "最深层级：", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 0);
@@ -116,7 +117,7 @@ public sealed class TaskPresetEditForm : Form
         _resampling.Width = 130;
         _resampling.Items.AddRange(["bilinear", "near", "cubic", "cubicspline", "lanczos", "average"]);
         slice.Controls.Add(_resampling, 1, 1);
-        _writeMetadata.Text = "同时输出算法元数据 json（FR-17）";
+        _writeMetadata.Text = "同时输出算法元数据 json";
         _writeMetadata.AutoSize = true;
         slice.Controls.Add(_writeMetadata, 2, 1);
         slice.SetColumnSpan(_writeMetadata, 2);
@@ -141,7 +142,7 @@ public sealed class TaskPresetEditForm : Form
         root.Controls.Add(sliceBox, 0, 1);
 
         // ---- 导出选项 ----
-        var exportBox = new GroupBox { Text = "导出选项（FR-18）", Dock = DockStyle.Fill, Height = 62 };
+        var exportBox = new GroupBox { Text = "导出选项", Dock = DockStyle.Fill, Height = 62 };
         var export = new FlowLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(8) };
         _zipTiles.Text = "前端产物打 zip";
         _zipTiles.AutoSize = true;

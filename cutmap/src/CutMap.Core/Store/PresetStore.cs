@@ -46,7 +46,7 @@ public sealed class PresetStore
     public static TaskPreset ChongqingTask { get; } = new()
     {
         Id = "task-chongqing",
-        Name = "重庆全域（204 教程口径）",
+        Name = "重庆全域",
         Description = "裁剪 105.3 28.1 110.2 32.2，双线性重采样，切片层级自动",
         Bounds = [105.3, 28.1, 110.2, 32.2],
         Resampling = "bilinear",
@@ -62,7 +62,7 @@ public sealed class PresetStore
     {
         Id = "chongqing",
         Name = "重庆全域",
-        Description = "105.3 28.1 110.2 32.2（204 教程 §4.2）",
+        Description = "105.3 28.1 110.2 32.2",
         Bounds = [105.3, 28.1, 110.2, 32.2],
         IsBuiltIn = true,
     };

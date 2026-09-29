@@ -2,6 +2,7 @@ using System.Globalization;
 using CutMap.Core.Geo;
 using CutMap.Core.Store;
 using CutMap.Core.Vector;
+using CutMap.App.Ui;
 
 namespace CutMap.App.Forms;
 
@@ -12,7 +13,7 @@ namespace CutMap.App.Forms;
 /// 让它跑完才发现，用户已经等了几分钟，而且产物是一片 nodata 瓦片——
 /// CTB 不处理 nodata，那些值会被当作真实高程编码进去，前端看到的是平坦台地而不是空洞。
 /// </summary>
-public sealed class MosaicForm : Form
+public sealed class MosaicForm : ThemedForm
 {
     private readonly ListView _inputs = new();
     private readonly Label _inputSummary = new();
@@ -234,7 +235,7 @@ public sealed class MosaicForm : Form
         _resampling.SelectedIndex = 0;
         output.Controls.Add(_resampling, 1, 1);
 
-        _metadata.Text = "同时输出算法元数据 json（FR-17）";
+        _metadata.Text = "同时输出算法元数据 json";
         _metadata.Checked = true;
         _metadata.AutoSize = true;
         output.Controls.Add(_metadata, 2, 1);
@@ -257,6 +258,7 @@ public sealed class MosaicForm : Form
             Padding = new Padding(12, 4, 12, 10),
         };
         var cancel = new Button { Text = "取消", DialogResult = DialogResult.Cancel, Width = 84 };
+        Theme.MarkPrimary(_ok);
         _ok.Text = "开始";
         _ok.Width = 96;
         _ok.Enabled = false;

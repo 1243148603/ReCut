@@ -1,4 +1,5 @@
 using CutMap.Core.Store;
+using CutMap.App.Ui;
 
 namespace CutMap.App.Forms;
 
@@ -16,7 +17,7 @@ public enum TaskKind
 /// 用三个按钮而不是"勾选后向导跳过页"。差别在于：勾选式适合"一次跑多步"，
 /// 而现在每步都是独立任务，选一个、跑一个更直白。
 /// </summary>
-public sealed class TaskChooserForm : Form
+public sealed class TaskChooserForm : ThemedForm
 {
     private readonly PresetStore _presets = new();
     private readonly ComboBox _preset = new();

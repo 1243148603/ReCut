@@ -1,6 +1,7 @@
 using System.Globalization;
 using CutMap.Core.Geo;
 using CutMap.Core.Store;
+using CutMap.App.Ui;
 
 namespace CutMap.App.Forms;
 
@@ -13,7 +14,7 @@ namespace CutMap.App.Forms;
 /// 两者并存是因为用途不同：前者是"这个范围我常用"，后者是"这整套配置我常用"。
 /// 内置项都不可删除（可编辑后另存为新预设）——删了之后"照着教程跑一遍"就没了参照。
 /// </summary>
-public sealed class PresetForm : Form
+public sealed class PresetForm : ThemedForm
 {
     private readonly PresetStore _store;
     private readonly ListView _clipList = new();
@@ -240,7 +241,7 @@ public sealed class PresetForm : Form
 }
 
 /// <summary>单条裁剪范围预设的编辑框。</summary>
-public sealed class ClipPresetEditForm : Form
+public sealed class ClipPresetEditForm : ThemedForm
 {
     private readonly TextBox _name = new();
     private readonly TextBox _description = new();

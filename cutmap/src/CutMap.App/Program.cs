@@ -8,6 +8,10 @@ internal static class Program
     [STAThread]
     private static void Main()
     {
+        // PerMonitorV2：多显示器、不同缩放比例下切换时布局不糊。
+        // ApplicationConfiguration.Initialize() 已按 csproj 设了默认值，
+        // 这里显式声明，避免将来有人改了项目属性而没意识到影响。
+        Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
         ApplicationConfiguration.Initialize();
 
         // CTB 是自包含分发包（NFR-02），定位方式是"从 exe 往上找 ctb\bin\ctb-tile.exe"，

@@ -1,4 +1,5 @@
 using CutMap.Core.Vector;
+using CutMap.App.Ui;
 
 namespace CutMap.App.Forms;
 
@@ -8,7 +9,7 @@ namespace CutMap.App.Forms;
 /// 选中的多个区域**不需要先做 dissolve**：gdalwarp 的 <c>-cutline</c> 把整个
 /// 数据源当作一个掩膜，并集是掩膜本身自然得到的。
 /// </summary>
-public sealed class BoundaryPickerForm : Form
+public sealed class BoundaryPickerForm : ThemedForm
 {
     private readonly BoundaryStore _store;
     private readonly TreeView _tree = new();

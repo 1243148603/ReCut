@@ -11,7 +11,7 @@ namespace CutMap.App.Forms;
 /// 日志与进度都汇集在这里。加任务类型时只加一个 <see cref="Job"/> 子类和一个
 /// 参数对话框，不动这个窗口。
 /// </summary>
-public sealed class MainForm : Form
+public sealed class MainForm : ThemedForm
 {
     private readonly EventPump _pump = new();
     private readonly List<Job> _jobs = [];
@@ -118,6 +118,8 @@ public sealed class MainForm : Form
         menu.Opening += (_, _) => UpdateContextMenu();
         _jobList.ContextMenuStrip = menu;
 
+        // 日志面板刻意用深色控制台外观，不跟主题走。见 Theme.Exclude。
+        Theme.Exclude(_log);
         _log.Multiline = true;
         _log.ReadOnly = true;
         _log.ScrollBars = ScrollBars.Vertical;

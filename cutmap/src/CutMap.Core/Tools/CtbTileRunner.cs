@@ -91,6 +91,13 @@ public sealed record CtbTileResult(
 public static class CtbTileRunner
 {
     /// <summary>
+    /// 传给 ctb-tile 的 <c>-m</c>（warp 内存上限）。见 <see cref="Run"/> 里的说明：
+    /// 不封顶时 GDAL 可能一次申请约 1 GB 的整幅缓冲，在 16 GB / 20 线程的机器上
+    /// 偶发分配失败。
+    /// </summary>
+    private const long WarpMemoryBytes = 64L * 1024 * 1024;
+
+    /// <summary>
     /// GDALTermProgress 的形状是 <c>0...10...20...90...100 - done in 00:03:21</c>：
     /// 中间每一步后面跟省略号，但**最后一步 100 后面没有省略号**，直接接 " - done"。
     /// 只匹配省略号会漏掉终值，进度条永远停在 90%。
@@ -115,6 +122,13 @@ public static class CtbTileRunner
         Directory.CreateDirectory(request.OutputDirectory);
 
         var args = new List<string> { "-o", request.OutputDirectory };
+        // **给 warp 内存设上限。** 不设时 GDAL 会按缓存上限算 chunk，实测在某个
+        // 交汇路径上会一次性申请整幅栅格那么大的缓冲（17640×14760×4 ≈ 1.0 GB），
+        // 20 线程 × 这个尺寸在 16 GB 机器上偶发 "cannot allocate ... bytes" →
+        // "Error: Could not read heights from raster"（切片跑到 8 分钟才炸，重跑又正常，
+        // 典型的内存压力型失败）。封顶 64 MB 后单次分配有界，多线程峰值也可控。
+        args.Add("-m");
+        args.Add(WarpMemoryBytes.ToString(CultureInfo.InvariantCulture));
         // 注意：-s/-e 才是层级；-m 是 --warp-memory（内存上限），教程 §5.3 写作最大级别是笔误。
         // **必须用不变文化。** 这两个数字会被拼进 ctb-tile 的命令行，
         // 在数字形状或分隔符不同的区域设置下可能拼出非 ASCII 的内容，

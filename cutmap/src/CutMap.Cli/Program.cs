@@ -57,6 +57,12 @@ internal static class Program
             case "download":
                 return DownloadCommand.RunAsync(@"D:\Map", args.Contains("--network")).GetAwaiter().GetResult();
 
+            case "publish":
+            {
+                if (args.Length < 2) return Usage();
+                return PackageCommand.Publish(args[1], args.Length > 2 ? args[2] : null);
+            }
+
             case "package":
                 return PackageCommand.Run(
                     @"D:\Map",
@@ -100,6 +106,8 @@ internal static class Program
                                    M2: mosaic + clip + algo metadata json
               slice <tif> [out] [maxzoom]
                                    M1: slice a GeoTIFF into terrain tiles
+              publish <tiles> [tif]
+                                   write layer.json / README / metadata (no zip)
               package [tiles] [tif] [out]
                                    M3: layer.json, dual artifacts, zip
               download [--network] M4: tile enumeration and URL templates

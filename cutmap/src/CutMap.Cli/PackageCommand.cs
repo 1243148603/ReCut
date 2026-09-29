@@ -14,6 +14,47 @@ namespace CutMap.Cli;
 /// </summary>
 internal static class PackageCommand
 {
+    /// <summary>
+    /// 真实体量的发布：写 layer.json + 部署说明 + 算法元数据，**不打 zip**。
+    ///
+    /// 与 <see cref="Run"/> 的区别：那个是小数据上的三组合验收（要打 zip 验证
+    /// 开关组合），22 万瓦片打两次 zip 太慢；这个只跑一遍真实产物，用于端到端。
+    /// </summary>
+    public static int Publish(string tilesDir, string? tifPath)
+    {
+        if (!Directory.Exists(tilesDir))
+        {
+            Console.Error.WriteLine($"FAIL  瓦片目录不存在：{tilesDir}");
+            return 1;
+        }
+
+        var ok = true;
+        Console.WriteLine("打包（写 layer.json / 部署说明 / 算法元数据）");
+        var result = Packager.Run(
+            new PackageRequest(
+                Path.Combine(tilesDir, ".."),
+                TilesDirectory: tilesDir,
+                AlgoTifPath: File.Exists(tifPath) ? tifPath : null,
+                ZipTiles: false, ZipAlgo: false),
+            onLog: line => Console.WriteLine("  " + line));
+
+        Console.WriteLine($"  产物：{result.Summary}");
+        ok &= result.LayerJsonPath is not null;
+        ok &= result.DeployReadmePath is not null;
+
+        if (result.LayerJsonPath is { } lp)
+        {
+            var layer = System.Text.Json.JsonDocument.Parse(File.ReadAllText(lp)).RootElement;
+            Console.WriteLine($"  layer.json：maxzoom={layer.GetProperty("maxzoom").GetInt32()}，" +
+                              $"bounds=[{string.Join(", ", layer.GetProperty("bounds").EnumerateArray().Select(e => e.GetDouble().ToString("F4")))}]");
+        }
+        ok &= File.Exists(Path.Combine(tilesDir, "README.txt"));
+
+        Console.WriteLine();
+        Console.WriteLine(ok ? "PASS  发布产物齐全" : "FAIL  发布产物不全");
+        return ok ? 0 : 1;
+    }
+
     public static int Run(string repoRoot, string? tilesDir, string? tifPath, string? outDir)
     {
         tilesDir ??= Path.Combine(repoRoot, "cutmap", "_gate", "slice_smoke");

@@ -1,0 +1,479 @@
+# Map — 重庆全域 DEM → Cesium 地形瓦片流水线
+
+把 Copernicus GLO-30 全球 DEM 的 30 幅分幅，经「拼接连片 → 切片 → 校验」产出可直接被
+CesiumJS 加载的 `heightmap-1.0` 地形瓦片集。本目录是**基线运行（baseline run）**的完整留档：
+脚本、原始数据、输出产物、校验证据、耗时记录全部在内。
+
+| 项 | 值 |
+|---|---|
+| 覆盖范围 | 重庆全域 + 周边，经纬度 105.3°E–110.2°E / 28.1°N–32.2°N |
+| 数据源 | Copernicus DEM GLO-30（30 m / 1 角秒，EPSG:4326） |
+| 分幅数 | 30 幅（5 行 × 6 列） |
+| 连片栅格 | 17640 × 14760 px，Float32，LZW 压缩，约 1.09 GB |
+| 输出瓦片 | 223,495 个 `.terrain`，zoom 0–14 |
+| 切片耗时 | 354 秒（5 分 42 秒，20 核） |
+| CTB 版本 | 0.4.1（自编译，随 `ctb/` 打包分发） |
+| 基线运行日期 | 2026-09-24 |
+
+---
+
+## 1. 目录结构
+
+```
+D:\Map\
+├── ctb\                          CTB 运行时自包含分发包（NFR-02）
+│   ├── bin\                      4 个 exe + 50 个 DLL（约 106 MB）
+│   ├── share\gdal\               放 GDAL_DATA 指向的支撑数据（约 13 MB）
+│   ├── share\proj\               放 PROJ_DATA 指向的 proj.db 等
+│   └── ctb.cmd                   工具启动器：设好 GDAL_DATA/PROJ_DATA 再调 exe
+│
+├── data\
+│   ├── inputs\dem\               30 幅原始 DEM GeoTIFF（约 1.38 GB）
+│   └── outputs\
+│       ├── terrain_tif\          拼接产物
+│       │   ├── chongqing_dem.tif         直接 30 输入的 gdalwarp 结果
+│       │   ├── mosaic.vrt                gdalbuildvrt 建的虚拟镶嵌
+│       │   └── chongqing_dem_vrt.tif     VRT 路径的 gdalwarp 结果
+│       ├── cesium_terrain\       最终瓦片集，{z}/{x}/{y}.terrain
+│       └── algo\                 预留（算法对照实验用），当前为空
+│
+├── baseline\                     本次基线运行的全部证据
+│   ├── commands\                 7 个步骤脚本 + 2 个 Python 工具   ← 唯一的"源码"
+│   ├── manifests\                下载清单、gdalinfo、瓦片计数、DLL 清单
+│   ├── golden\                   回归基准：抽样瓦片 + layer.json + 校验和
+│   ├── maxzoom_calibration\      maxzoom 公式标定实验的输入与结果
+│   ├── timings\                  耗时记录
+│   ├── coverage_probe\           预留（覆盖探针），当前为空
+│   └── tilings\                  预留（切片变体对照），当前为空
+│
+├── logs\                         各步骤的标准输出留档
+├── serve.py                      本地静态服务器（浏览器看地形用，见 §8.2）
+├── terrain_viewer.html           三维预览页（含自检面板）
+└── README.md                     本文件
+```
+
+> `baseline/` 下的 `coverage_probe\`、`tilings\`、`data/outputs/algo\` 三个空目录是
+> 预留位，当前基线运行未产出内容。
+>
+> `serve.py` 和 `terrain_viewer.html` 是**查看产物用的辅助工具**，不属于流水线本身，
+> 也不参与验收口径（`baseline/` 与 `data/` 的内容不受它们影响）。
+
+---
+
+## 2. 环境依赖
+
+**构建 CTB 时**（仅需一次，产物已固化为 `ctb\`）：
+
+| 组件 | 本机路径 / 版本 |
+|---|---|
+| CMake | `D:\VStudio\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe`（3.31.6-msvc6） |
+| MSVC | Visual Studio 17 2022，工具集 14.44.35207 |
+| GDAL/PROJ | conda 环境 `C:\Users\hwj\miniconda3\envs\geo`（GDAL 3.13.3） |
+| CTB 源码 | `C:\code\Map\cesium-terrain-builder-master` |
+
+**运行流水线时**：只需 `D:\Map\ctb\`（自包含），另加：
+- `curl`（下载步骤）
+- `osgeo` Python 包（两个校验脚本）
+
+**关键环境变量**——CTB 的 exe 必须能找到 `proj.db`：
+
+```cmd
+set "PROJ_DATA=<bundle>\share\proj"
+set "GDAL_DATA=<bundle>\share\gdal"
+```
+
+不加这两个变量，每次 CTB 调用都会打印
+`ERROR 1: PROJ: proj_create_from_database: Cannot find proj.db` 并失败。
+原因：`proj.db` 在 `Library\share\proj\`，**不在** `Library\bin\` 里 DLL 的旁边，
+所以光拷贝 DLL 不够。`ctb\ctb.cmd` 已封装此逻辑，请一律经它调用。
+
+---
+
+## 3. 数据规格
+
+**输入分幅（Copernicus GLO-30）**，每幅实测：
+
+```
+尺寸       3600 × 3600 px
+数据类型   Float32
+坐标系     EPSG:4326
+像元       1/3600 度（= 1 角秒 ≈ 30 m）
+原点       像素中心约定（pixel-centre）
+```
+
+**半像素修正（重要）**：COG 的 geotransform 原点是**像素中心**，比标称图幅边缘
+内缩半个像元。例如 `N28_E105.tif` 原点为 `104.999861`，而非 `105.0`。
+栅格数据占满整度，因此真实范围是
+`origin ± 0.5/3600`。任何覆盖范围判断（如 FR-01）若不做此修正，
+每个瓦片四边都会**少算 0.5 角秒（约 15 m）**。
+
+**输出瓦片**：`heightmap-1.0` 格式，TMS 方案，`{z}/{x}/{y}.terrain`，
+zoom 0–14，含 `watermask` 扩展。元数据见 [baseline/golden/layer.json](baseline/golden/layer.json)。
+
+---
+
+## 4. 流水线
+
+| # | 脚本 | 作用 | 输入 | 输出 | 耗时 |
+|---|---|---|---|---|---|
+| 1 | [01_download.sh](baseline/commands/01_download.sh) | 下载 30 幅 DEM | S3 | `data/inputs/dem/*.tif` | — |
+| 2 | [02_ctb_build.cmd](baseline/commands/02_ctb_build.cmd) | 自编译 CTB | CTB 源码 | `build/tools/Release/*.exe` | — |
+| 3 | [03_gdalwarp_mosaic.cmd](baseline/commands/03_gdalwarp_mosaic.cmd) | 拼接 + 裁切 | 30 幅 DEM | `terrain_tif/chongqing_dem.tif` | 24 s |
+| 4 | [04_ctb_slice.cmd](baseline/commands/04_ctb_slice.cmd) | 切成地形瓦片 | 拼接栅格 | `cesium_terrain/{z}/{x}/{y}.terrain` | 354 s |
+| 5 | [05_maxzoom_calibration.cmd](baseline/commands/05_maxzoom_calibration.cmd) | 造 4 种分辨率的裁剪样本 | `N28_E105.tif` | `maxzoom_calibration/res_*.tif` | — |
+| 6 | [06_maxzoom_probe.cmd](baseline/commands/06_maxzoom_probe.cmd) | 探测各样本的自动 maxzoom | 上述样本 | `maxzoom_calibration/maxzoom_out/*.geojson` | — |
+| 7 | [07_vrt_equivalence.cmd](baseline/commands/07_vrt_equivalence.cmd) | VRT 路径等价性实验 | 30 幅 DEM | `chongqing_dem_vrt.tif` | 20 s |
+
+另外两个独立工具：
+
+- [resolve_ctb_deps.py](baseline/commands/resolve_ctb_deps.py) — 递归解析 PE 导入表，算出 CTB 真实所需的最小 DLL 集
+- [verify_dem.py](baseline/commands/verify_dem.py) — 校验 30 幅 DEM，产出元数据 JSON
+
+复现顺序：`1 → 2 → verify_dem.py → 3 → 4`。
+
+### 步骤 3 参数说明
+
+```cmd
+gdalwarp -t_srs EPSG:4326 -te 105.3 28.1 110.2 32.2 -te_srs EPSG:4326 -r bilinear
+         -co TILED=YES -co COMPRESS=LZW -overwrite --config GDAL_CACHEMAX 2048
+```
+
+- `-te` 用 `-te_srs EPSG:4326` 显式声明为经纬度，避免歧义
+- `-r bilinear` 重采样；裁切边界落在像元之间，必须有明确的重采样核
+- `TILED=YES` + `COMPRESS=LZW`：按 256×256 分块并压缩，后续 CTB 顺序读取才快
+- `GDAL_CACHEMAX 2048`：2 GB 缓存，30 个输入逐个处理时避免反复换页
+- 30 个输入路径**全部显式列出、不用通配符**，这样本文件本身就是一份可逐字节复现的记录
+
+裁切范围比数据范围（105°–111°E / 28°–33°N）四周各收进一点，避开 GLO-30 边缘的
+低质量区。输出 17640 × 14760 = (110.2−105.3)×3600 × (32.2−28.1)×3600。
+
+### 步骤 4 参数说明（教程勘误）
+
+`ctb-tile` 的 `-m` **不是** max level，而是 `--warp-memory <bytes>`（内存上限）。
+缩放选项实际是：
+
+| 选项 | 含义 | 默认 |
+|---|---|---|
+| `-s` / `--start-zoom` | 深端（最细层） | 自动算出的 max zoom |
+| `-e` / `--end-zoom` | 浅端（最粗层） | 0 |
+
+所以要切到最深层，**不加任何缩放选项**即可——本脚本正是如此。
+另：`ctb-tile` 在输出目录不存在时会报错，脚本先 `mkdir`。
+
+### 步骤 5–6 maxzoom 标定
+
+验收公式：`maxzoom = ceil(log2( (180/65) / pixel_size_deg ))`，
+其中 180/65 ≈ 2.769° 是「一像素覆盖 65 m」对应的分辨率基准。标定实验用 4 种
+像元尺寸裁同一块区域，看 `ctb-extents` 自动算出的层级：
+
+| 样本 | 像元（度） | 像元（角秒） | 公式预期 | 实测 |
+|---|---|---|---|---|
+| `res_05_3600.tif` | 1/7200 | 0.5 | 15 | **15** ✓ |
+| `res_1_3600.tif` | 1/3600 | 1 | 14 | **14** ✓ |
+| `res_2_3600.tif` | 1/1800 | 2 | 13 | **13** ✓ |
+| `res_3_3600.tif` | 1/1200 | 3 | 12 | **12** ✓ |
+
+四组全部吻合，公式成立。读法：`ctb-extents` 不做栅格读取，它 stdout 第一行是
+`creating <dir>/<N>.geojson`，其中 N 即自动 maxzoom。
+
+### 步骤 7 VRT 等价性（未通过，见 §6）
+
+`gdalbuildvrt` 建虚拟镶嵌 → `gdalwarp` 一条输入，对照步骤 3 的 30 输入直连路径。
+
+---
+
+## 5. 产物与证据索引
+
+| 文件 | 内容 |
+|---|---|
+| [baseline/manifests/dem_downloads.txt](baseline/manifests/dem_downloads.txt) | 30 幅的远端长度 / 本地长度 / ETag / 状态，全部 `status=OK` |
+| [baseline/manifests/dem_gdalinfo.json](baseline/manifests/dem_gdalinfo.json) | 每幅的尺寸、CRS、geoTransform、含半像素修正的 bbox、字节数 |
+| [baseline/manifests/mosaic_gdalinfo.json](baseline/manifests/mosaic_gdalinfo.json) | 连片栅格的完整 gdalinfo（含 PROJJSON、STAC 段） |
+| [baseline/manifests/tile_counts.txt](baseline/manifests/tile_counts.txt) | 各 zoom 层瓦片数，合计 223,495 |
+| [baseline/manifests/ctb_min_dlls.txt](baseline/manifests/ctb_min_dlls.txt) | 最小 DLL 集清单（49 项）及各自字节数 |
+| [baseline/golden/](baseline/golden/) | 回归基准：7 个抽样 `.terrain`、`layer.json`、两种路径的校验和 |
+| [baseline/maxzoom_calibration/calibration_results.txt](baseline/maxzoom_calibration/calibration_results.txt) | 标定结论 4 行 |
+| [baseline/timings/run_timings.json](baseline/timings/run_timings.json) | 机器信息 + 各步骤耗时 |
+| [logs/](logs/) | 下载 / gdalwarp / ctb-tile / VRT 四个步骤的 stdout 留档 |
+
+**瓦片数与层级分布**（`tile_counts.txt`）：
+
+```
+zoom 0–4:  各 1 个        zoom  9:  195      zoom 13:  42,112
+zoom 5:    4              zoom 10:  700      zoom 14: 167,178   ← 占 74.8%
+zoom 6:    9              zoom 11: 2,688     ─────────────────
+zoom 7:   20              zoom 12: 10,528    合计:    223,495
+zoom 8:   56
+```
+
+**CTB 精简效果**：教程给的 `copy Library\bin\*.dll` 会连带拷入约 450 MB 的
+Intel MKL 和 32 MB 的 ICU，做出约 687 MB 的包。用 `resolve_ctb_deps.py`
+从 4 个 exe + `ctb.dll` 递归解析导入表后，实际只需 **49 个 DLL**，
+加上 `share\` 总计约 119 MB。最大的三个是 `icudt78.dll`(33 MB)、
+`gdal.dll`(25 MB)、`spatialite.dll`(13 MB)。
+
+---
+
+## 6. 已知问题与注意事项
+
+### 6.1 VRT 路径与直连路径**不等价** —— 结论：不要用 gdalbuildvrt
+
+PRD 验收 #1 要求「软件产物与 204 教程命令行产物一致」。三条路径实测：
+
+| 路径 | Checksum | 与命令行基线 |
+|---|---|---|
+| 命令行 30 文件直传（基线） | **58775** | — |
+| `gdalbuildvrt` + `gdalwarp` | **31298** | ❌ 不一致 |
+| **`gdal.Warp(dst, [文件列表])`** | **58775** | ✅ 完全一致 |
+
+VRT 路径的文件大小也比基线多 300,090 字节。`Checksum` 是 GDAL 对全栅格采样的
+校验值，数值不同即像元数据本身不同。
+
+**差异位置与根因**（已在项目执行记录中定位）：
+
+- 差异**全部集中在整数度线上**（lat 29/30/31/32、lon 106–110），即 1°×1° 分幅的**接缝**，整行整列相差
+- 99.9% 的像素差异 < 0.0001 m（可忽略）；但 126,687 个像素（0.049%）差异 **> 1 m**，最大 **2134 m**
+- 根因是 §3 提到的**半像素原点**：预建 VRT 时 GDAL 按 VRT 自己的网格重采样，接缝两侧的插值取值与「一次性处理 30 个源」不同
+
+**结论**：
+
+- Python 走 `gdal.Warp()` **可行**，但**必须把源文件列表直接传进去**，不要先 `gdalbuildvrt` 再 warp
+- 若因性能考虑坚持用 VRT，则**不能主张验收 #1 的字节一致**，须把口径改为「最大高差 < 阈值」的容差判定
+
+> 旁证：`run_timings.json` 里 `python_gdal_warp_list`（33.3 s）的校验和是 **58775**，
+> 与直连路径一致——差异确实出在建 VRT 那一步，而非 `gdalwarp` 本身。
+
+### 6.2 `.cmd` 文件的两个硬性约束
+
+**约束一：必须纯 ASCII。** `cmd.exe` 按 OEM 代码页（本机 GBK/CP936）解析 `.cmd` 文件，
+**UTF-8 的中文注释会让解析错位并被当作命令执行**。
+因此 `baseline/commands/*.cmd` 和 `ctb/ctb.cmd` 里的注释一律用英文/ASCII 书写，
+这是刻意的约束，不是遗漏。`.sh` 和 `.py` 文件不受此限，可用中文。
+
+**约束二：必须用 CRLF 换行（不能是 LF）。** `cmd.exe` 的 `goto :label` 在 LF-only
+的批处理里会按错误的字节偏移去找标签，报
+`系统找不到指定的批标签 - collect`，**脚本直接失效**。
+
+实测（2026-09-28），同一目录下只有文件长度不同：
+
+| 文件 | 字节数 | 换行 | `ctb.cmd ctb-info --help` |
+|---|---|---|---|
+| `baseline/commands/ctb.cmd` | 1341 | LF-only | ✅ 正常 |
+| `ctb/ctb.cmd`（加注释后） | 1895 | LF-only | ❌ 找不到批标签 |
+| 同内容改名 | 1895 | LF-only | ❌ 找不到批标签 |
+| 同内容 | 1943 | **CRLF** | ✅ 正常 |
+
+失败与文件名、目录名无关（改名后照样失败），**只取决于标签落在文件中的字节位置**
+——也就是说 LF-only 的 `.cmd` 能跑通纯属侥幸，随时会因增删一行注释而失效。
+
+> ⚠️ 本仓库的 `.cmd` 曾全部是 LF-only，`ctb/ctb.cmd` 就是在补注释后被推过阈值而失效的。
+> 现已**全部转为 CRLF**，仍是纯 ASCII。Git 用户请在 `.gitattributes` 里钉死
+> `*.cmd text eol=crlf`，避免 `core.autocrlf` 或编辑器再把它改回 LF。
+
+### 6.3 教程与本机的差异
+
+| # | 教程说法 | 实际情况 |
+|---|---|---|
+| 1 | 下载 28 幅（`FILES` 数组硬编码） | 漏了 `N29_E107` / `N29_E108`，会在数据中间留 2°×1° 空洞**且不报错**。本机是全新目录无原始数据，必须下满 30 幅，故改为双重循环程序化生成 |
+| 2 | `-m <level>` 设最大层级 | 错。见 §4 步骤 4 |
+| 3 | 切片预估 3–4 分钟 | 实测 5:42，含 22 万个碎文件落盘开销 |
+| 4 | `copy Library\bin\*.dll` | 687 MB 臃肿包，见 §5 |
+| 5 | 共 **223,496** 个 `.terrain` | 实测 **223,495**。逐层复核与 `tile_counts.txt` 完全一致，教程多算 1 个（疑把同目录的 `layer.json` 计入） |
+| 6 | §6.1「把 `cesium_terrain/` 复制到前端」即可 | 漏了 gzip 响应头这一步，照做会导致地形完全不显示，见 §6.5 |
+
+### 6.4 下载脚本的自愈设计
+
+`01_download.sh` 的跳过逻辑是**先校验后跳过**：先用 `curl -sI` 取远端
+`Content-Length`，与本地 `stat` 大小比对，只有一致才跳过。若直接对已完整文件
+用 `curl -C -`，S3 会返回 416，`-f` 再把它转成退出码 22，看起来像失败。
+清单写在 `dem_downloads.txt`，重跑脚本即可续传/跳过，幂等。
+
+### 6.5 `.terrain` 必须由服务器声明 `Content-Encoding: gzip`（否则地形永远不显示）
+
+**这是「瓦片都生成了，前端却一片空白」的根因**，教程 §6.1 没提，务必先看这一条。
+
+CTB 输出的瓦片是 **gzip 压缩**的。CTB README 第 28 行原文：
+
+> This creates **gzipped terrain tiles** from a GDAL raster representing a DEM
+
+磁盘上的 `0/1/0.terrain` 只有 **86 字节**，开头是 gzip 魔数 `1f 8b`，解压后才是完整的
+**8452 字节**。Cesium **不在 JS 里解压**，它依赖浏览器完成透明解压——而这只有当响应带
+`Content-Encoding: gzip` 时才会发生。缺这个头，浏览器把压缩字节原样交给 Cesium：
+
+```javascript
+new Uint16Array(buffer, 0, 65 * 65)   // 需要 8450 字节
+```
+
+对 86 字节的 buffer 调用 → **RangeError**，`HeightmapTerrainData` 构造失败，所有瓦片
+加载均告失败。**症状极具误导性**：
+
+- 访问日志里瓦片是 **200**（传输本身没问题，`layer.json` 也能正常解析）
+- 但 globe **永远停在 0 级**，不再请求任何子瓦片，屏幕上没有地形
+- Cesium 的 `errorEvent` 只给一个不带 URL 的 RangeError，凭它定位不到问题
+
+**正确做法**：用仓库自带的 [serve.py](serve.py)，它只为**确实以 gzip 魔数开头**的
+`.terrain` 补上该响应头（因此将来换成非压缩瓦片也不会说谎），并在日志里标 `[gzip]`：
+
+```bash
+cd D:/Map && python serve.py --port 8080
+```
+
+**错误做法**：`python -m http.server`（不加该头）、Vite/nginx 默认配置、以及任何
+「把目录复制过去就完事」的部署方式。nginx 需要显式配置：
+
+```nginx
+location ~ \.terrain$ { gzip_static off; add_header Content-Encoding gzip; }
+```
+
+Apache 的等价写法（CTB 部署文档里的做法）是 `Header set Content-Encoding gzip`。
+
+> 验证方法：`curl --compressed -o t.bin <url>` 应得到 **8452 字节**；
+> 不加 `--compressed` 则得到 86 字节的 gzip 流。
+
+> 另一个常被怀疑但与本次故障**无关**的点：`layer.json` 没有 `available` 数组。
+> Cesium 的 `getTileDataAvailable` 在没有该数组时返回 `undefined`，表示「未知，按可用处理」，
+> **不会阻止细分**。不必为此手工构造可用性数组。
+
+---
+
+## 7. 复现步骤
+
+```bash
+# 1. 下载 30 幅 DEM（幂等，可重复运行）
+bash D:/Map/baseline/commands/01_download.sh
+
+# 2. 校验（不通过就不要往下走）
+python D:/Map/baseline/commands/verify_dem.py
+
+# 3. 拼接（需先设好 GDAL_DATA / PROJ_DATA）
+cmd /c D:\Map\baseline\commands\03_gdalwarp_mosaic.cmd
+
+# 4. 切片
+cmd /c D:\Map\baseline\commands\04_ctb_slice.cmd
+```
+
+步骤 2 是硬性闸门：30 幅全部通过（尺寸 3600×3600、EPSG:4326、像元 1/3600 度）
+才应继续，否则后面的拼接会把问题数据静默带进瓦片集。
+
+验证结果：应得到 223,495 个 `.terrain`，`chongqing_dem.tif` 尺寸 17640×14760，
+Checksum = 58775。
+
+---
+
+## 8. 查看运行结果
+
+### 8.1 命令行核对（无需浏览器）
+
+```bash
+# 瓦片总数与各层级分布
+cat baseline/manifests/tile_counts.txt
+find data/outputs/cesium_terrain -name '*.terrain' | wc -l      # 应为 223495
+
+# 连片栅格是否与基线一致（应输出 Checksum=58775）
+gdalinfo data/outputs/terrain_tif/chongqing_dem.tif | grep Checksum
+
+# 解码单个瓦片，看高程是否合理
+cd D:/Map
+PROJ_DATA=D:/Map/ctb/share/proj GDAL_DATA=D:/Map/ctb/share/gdal \
+  ./ctb/bin/ctb-info.exe data/outputs/cesium_terrain/14/25968/10752.terrain
+
+# 加 -e 打印 65x65 高度栅格（数值为「米」的 5 倍偏移，见下）
+PROJ_DATA=D:/Map/ctb/share/proj GDAL_DATA=D:/Map/ctb/share/gdal \
+  ./ctb/bin/ctb-info.exe -e -c -t data/outputs/cesium_terrain/14/25968/10752.terrain
+```
+
+**瓦片数值怎么读**：`TerrainTiler.cpp:50` 的编码是
+
+```
+原始值 = (高程_m + 1000) * 5        即   高程_m = 原始值 / 5 - 1000
+```
+
+所以 `-e` 打出的 `9821` 是 `964.2 m`，`9305` 是 `861 m`——都在重庆的合理海拔区间。
+可表示范围 0–65535，对应 **−1000 m 到 +12107 m**。
+
+**注意 nodata**：值 `5000` 代表 **0 m**，是数据范围外的填充值。边缘瓦片会出现整片
+`5000`（例如 `14/25968/10752` 的前 41 列），在三维场景里表现为一片平齐的"海平面"台地。
+
+### 8.2 三维可视化
+
+地形瓦片是渲染格式，必须经 HTTP 加载（浏览器安全策略不允许页面直接读本地文件，
+双击 HTML 打不开）。仓库里附了 [terrain_viewer.html](terrain_viewer.html) 和配套服务器
+[serve.py](serve.py)：
+
+```bash
+cd D:/Map
+python serve.py --port 8080
+```
+
+然后浏览器打开 **http://127.0.0.1:8080/terrain_viewer.html**。
+
+> ⚠️ **不要用 `python -m http.server`**。它不会为 `.terrain` 加 `Content-Encoding: gzip`，
+> 结果是瓦片全部请求 200、`layer.json` 也解析成功，但**页面上什么都不显示**。
+> 原因见 §6.5。
+
+页面做的事：
+
+- 用 `CesiumTerrainProvider.fromUrl('./data/outputs/cesium_terrain/', {...})` 加载瓦片
+- **自检面板**：先用原生 `fetch` 绕过 Cesium 直接探测几个已知瓦片，检查返回体是否已被
+  浏览器解压（首字节不是 `1f 8b`）、字节数是否为 8452。这一步会把 §6.5 那类
+  「传输对了但没解压」的故障直接点出来，不必开 F12
+- **fetch 拦截**：记录每个 `.terrain` 的真实状态码和 URL，汇总时区分「正常 404
+  （bounds 之外本来就没有瓦片）」与真正的失败
+- **数据正确性自检**：在数据区四角各取一点，直接取覆盖该点的 z14 瓦片、按
+  `heightmap-1.0` 解出那一个像素（`高度 = 原始值 / 5 - 1000`），与源 DEM 对照：
+
+  | 点位 | 经纬度 | 瓦片值 | 源 DEM | 差 |
+  |---|---|---|---|---|
+  | 中部偏西 | 107.75E 30.15N | 394.6 m | 399.2 m | −4.6 m |
+  | 西北部 | 106.25E 31.65N | 380.0 m | 375.2 m | +4.8 m |
+  | 东北部 | 109.45E 31.25N | 550.2 m | 541.7 m | +8.5 m |
+  | 西南部 | 105.55E 28.35N | 436.8 m | 424.4 m | +12.4 m |
+
+  参考值用 `gdallocationinfo -valonly -geoloc <源DEM> <该像素中心经纬度>` 取，所以
+  两者指的是同一位置，差值就是重采样保真度（30 m 源网格 → 65×65 瓦片）。
+  **这一节只读本机瓦片，不碰 CDN**，所以 Cesium 加载失败时页面照样能回答
+  「数据本身对不对」。
+- 垂直夸张滑块（默认 2×）——重庆起伏相对 5°×4° 的范围偏小，1× 下不易看清
+
+相对路径 `./data/outputs/cesium_terrain/` 之所以能直接用，是因为页面和瓦片同源
+（都从 `D:/Map` 起服务），省掉了 CORS 配置。
+
+> **需要联网的地方**：页面从 `cdn.jsdelivr.net` 加载 Cesium 1.128（约 5 MB），底图用
+> OSM 在线瓦片。**地形瓦片本身全在本地**，所以 Cesium 一旦加载好，断网也能看地形
+> （底图失败时页面会提示「不影响地形」）。若要在完全离线的机器上看，把 Cesium 的
+> `Build/Cesium` 目录拷到本机、改一下 `<script src>` 即可。
+> 加载期间页面会先显示「正在加载 Cesium.js…」，失败时给出明确提示，不会白屏。
+
+> **别用 `globe.getHeight` 判断数据对不对**：它只反映相机视野内已加载的瓦片，
+> 视野外的点会退回粗层祖先瓦片插值。实测（2026-09-28，无头 Edge）同一个点能
+> 报出 703.72 m，而瓦片真值和源 DEM 都是 ~399 m —— 差 300 m，且因相机固定而
+> 「稳定复现」，很容易被当成数据错误。要验数据就按上面的自检直接解瓦片。
+
+> **两个已知点**：
+> - CesiumJS 仍支持 `heightmap-1.0`（`CesiumTerrainProvider.fromUrl`），但该格式已被
+>   官方标记为 deprecated（推荐 quantized-mesh）。注意 1.136 起旧的构造器和
+>   `readyPromise` 写法已移除，只能用 `fromUrl`。
+> - `layer.json` 声明了 `"extensions": ["watermask"]`，实际瓦片是 8452 字节，
+>   对应 `TerrainTile.cpp:114` 的 `(TILE_CELL_SIZE*2)+2` 分支，watermask 只占 **1 字节**
+>   （值为 `0x00`）。**这是无害的**：Cesium 解析该字段用的是
+>   `new Uint8Array(buffer, 8451, buffer.byteLength - 8451)`，1 字节也能构造，
+>   且 `heightmap-1.0` 分支会**强制** `requestWaterMask = true`
+>   （见 Cesium 1.128 的 layer.json 处理逻辑），所以调用方传什么值都不影响结果。
+>   曾一度怀疑此处，实测排除。
+
+---
+
+## 9. 术语
+
+| 缩写 | 含义 |
+|---|---|
+| CTB | cesium-terrain-builder，把 GeoTIFF 转成 Cesium 地形瓦片的工具集 |
+| DEM | Digital Elevation Model，数字高程模型 |
+| GLO-30 | Copernicus DEM 全球 30 m 版本 |
+| COG | Cloud Optimized GeoTIFF |
+| VRT | GDAL Virtual Raster，虚拟镶嵌（不产生副本，只记索引） |
+| FR / NFR | 功能需求 / 非功能需求（出自本项目 PRD，未随本仓库提供） |
+| heightmap-1.0 | Cesium 地形瓦片格式之一。高程存为**小端 uint16 数组**（不是 RGB），`原始值 = (米 + 1000) × 5` |
+| TMS | Tile Map Service，y 轴自下而上的瓦片编号方案 |
+| childTileMask | 瓦片末段 1 字节，按位标记四个子瓦片是否有数据（bit0=SW, 1=SE, 2=NW, 3=NE） |
+| Content-Encoding | HTTP 响应头，声明响应体经过压缩；`.terrain` 缺它会渲染失败，见 §6.5 |

@@ -13,9 +13,21 @@
 
 ## 1. 快速开始
 
+两种装法，任选：
+
+**安装包**（推荐）
+
 ```
-CutMap.App.exe
+CutMap-0.1.0-Setup-win-x64.exe
 ```
+
+双击即装，**不需要管理员权限**——装到 `%LOCALAPPDATA%\Programs\CutMap`，
+建开始菜单与桌面快捷方式，并在「设置 → 应用」里登记，可以从那里卸载。
+
+**绿色版**
+
+解压 `CutMap-0.1.0-win-x64.zip` 后直接运行 `CutMap.App.exe`，不写注册表。
+注意 `ctb\` 必须与 exe 同级或在其上层（程序从 exe 所在目录逐级往上找）。
 
 首次使用建议按这个顺序：
 
@@ -129,13 +141,23 @@ dotnet build cutmap/CutMap.sln -c Release
 产物在 `src/CutMap.App/bin/Release/net8.0-windows/win-x64/`（自包含，
 用户机器不需要装 .NET 运行时）。
 
-发布绿色版：
+发布两种形态：
 
-```bash
-bash cutmap/pack-release.sh
+```powershell
+# 绿色版 zip
+powershell -ExecutionPolicy Bypass -File cutmap\pack-release.ps1
+
+# 安装包 exe（可安装、可卸载，免管理员）
+powershell -ExecutionPolicy Bypass -File cutmap\pack-installer.ps1
 ```
 
-会产出 `dist/CutMap-<版本>-win-x64.zip`，内含程序本体与 `ctb\`。
+安装器的做法是把载荷 zip **追加在安装器 exe 的字节后面**，再写一段定长尾部记录
+（`[exe][payload.zip][int64 长度]["CUTMAPPA"]`）。安装器运行时读自己的文件并解压。
+选追加而不是嵌入资源，是为了让打包脚本能只重跑拼接、不重编译安装器。
+
+> ⚠ 两个 `.ps1` 都必须保存为 **UTF-8 with BOM**。Windows PowerShell 5.1 在没有 BOM 时
+> 按 ANSI（本机 GBK）解析脚本，中文注释会被拆成乱码字节，报的是"字符串缺少终止符"
+> 这类与真实原因无关的语法错误。
 
 ---
 
@@ -152,7 +174,9 @@ CutMap.Cli warp         # 拼接裁剪 + 算法元数据
 CutMap.Cli slice <tif>  # 切片
 CutMap.Cli package      # 打包与双产物
 CutMap.Cli download     # 分幅枚举与模板展开（--network 才真下载）
-CutMap.Cli verify <dir> # 校验已有瓦片集
+CutMap.Cli warp-vector <行政区代码>
+                        # 按真实行政边界裁剪（默认 156500000 重庆市）
+CutMap.Cli verify <dir> # 校验已有瓦片集能否被 Cesium 加载
 ```
 
 ---
@@ -168,6 +192,13 @@ CutMap.Cli verify <dir> # 校验已有瓦片集
 - **`ctb-tile` 失败时退出码是 0**：源码里 `catch (CTBException)` 之后照样
   `return 0`。所以本软件以 **stderr** 判成败，并把实际瓦片数与预期对账。
 - **暂停只有下载支持**：切片、拼接、打包没有可插等待点的循环（PRD OUT-07）。
+- **不要用中文做文件名**。软件产出过 `重庆市_dem.tif`，ctb-tile 直接报
+  `could not open GDAL dataset`——路径经过控制台时会被按本地代码页转成乱码。
+  现在一律用行政区代码（`dem_156500000.tif`）。
+- **真实行政边界可能自相交**，GDAL 会拒绝当 cutline。程序会自动做拓扑修复
+  （`MakeValid` + 挑出多边形部分）；修不好时**退回原几何让 GDAL 报错**，
+  而不是静默换一个形状——裁剪范围不能悄悄变。
+- **FR-08 的"切片参数预设"未实现**：只有裁剪范围预设。
 
 ---
 

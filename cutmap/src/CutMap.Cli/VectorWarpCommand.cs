@@ -39,8 +39,12 @@ internal static class VectorWarpCommand
             return 1;
         }
 
+        // 文件名用**行政区代码**而不是中文名。中文名在 GUI 里没问题（走 Unicode），
+        // 但一旦经过控制台——命令行调用、第三方工具、批处理——就会被按本地代码页
+        // 转成乱码，实测 ctb-tile 直接报 "could not open GDAL dataset"。
+        // 行政区代码是纯 ASCII 且唯一，比中文名更适合做文件名。
         outputPath ??= Path.Combine(repoRoot, "cutmap", "_gate", "vector_full",
-                                    $"{boundary.Name}_dem.tif");
+                                    $"dem_{boundary.Code}.tif");
         Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
 
         Console.WriteLine($"边界：{boundary.Display}");

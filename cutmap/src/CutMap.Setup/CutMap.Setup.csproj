@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    CutMap 安装程序（NFR-03 的 setup.exe）。
+
+    为什么是自研而不是 Inno Setup：本机拿不到 Inno Setup——winget 装它要管理员
+    提权（非交互环境过不去），GitHub Releases 直连被墙（HTTP 000）。与其卡在
+    工具上，不如自己写一个：只需要 .NET SDK，而且能做成**免管理员的按用户安装**，
+    这反而更贴合"绿色版"的定位。
+
+    载荷用「追加」而不是嵌入资源：把 payload.zip 直接接在 exe 字节后面，
+    再写一段定长尾部记录偏移与长度。这样打包脚本不必重新编译安装器，
+    重新追加一次即可，也避免 MSBuild 去啃一个几百 MB 的 EmbeddedResource。
+  -->
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <AssemblyName>CutMap-Setup</AssemblyName>
+    <!-- 安装器自己不需要 PDB，几百 MB 的载荷旁边再放符号文件没意义 -->
+    <DebugType>none</DebugType>
+  </PropertyGroup>
+
+</Project>

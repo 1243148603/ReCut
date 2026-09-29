@@ -36,14 +36,15 @@
   </PropertyGroup>
 
   <!--
-    目标平台只有 Windows x64（OUT-05 明确不支持非 Windows），所以 RID 与自包含统一给。
-    **条件是"可执行项目"而不是"目标框架含 -windows"**：CLI 是 net8.0（不带 -windows），
-    按框架名判断会让它掉回框架依赖，在没装 .NET 的机器上双击就报错。
-    类库（Core）不给——库设自包含没有意义，还会把运行时塞进引用它的项目。
+    ⚠ RuntimeIdentifier / SelfContained **不能放这里**。
+
+    试过用 `Condition="'$(OutputType)' == 'Exe'"` 把它们统一给可执行项目，
+    结果恒为假——**Directory.Build.props 在项目体之前求值，那时 OutputType 还没设**。
+    后果很隐蔽：构建照样成功、安装包照样打得出来，只是**自包含运行时没被打进去**
+    （实测发布目录里没有 coreclr.dll / hostfxr.dll），
+    装到没装 .NET 的机器上直接起不来。
+
+    所以这两个属性留在各项目的 csproj 里，那边 OutputType 是已知的。
   -->
-  <PropertyGroup Condition="'$(OutputType)' == 'Exe' or '$(OutputType)' == 'WinExe'">
-    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-    <SelfContained>true</SelfContained>
-  </PropertyGroup>
 
 </Project>

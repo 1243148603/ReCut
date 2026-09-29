@@ -10,6 +10,12 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
     <PublishSingleFile>false</PublishSingleFile>
+
+    <!-- NFR-02：自包含，用户机器不需要装 .NET 运行时。
+         必须写在这里而不是 Directory.Build.props——那个文件在项目体之前求值，
+         OutputType 还没设，条件判断恒为假，自包含会被静默丢掉。 -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
   </PropertyGroup>
 
 </Project>

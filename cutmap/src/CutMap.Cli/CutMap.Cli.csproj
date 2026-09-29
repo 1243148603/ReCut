@@ -11,7 +11,10 @@
 
     <!-- 与 App 一样自包含。发布包里两个 exe 放同一目录，共用同一份运行时文件。
          如果 CLI 保持框架依赖，它在没装 .NET 的机器上双击就报
-         "You must install or update .NET"——而它恰恰是拿去现场排障用的。 -->
+         "You must install or update .NET"——而它恰恰是拿去现场排障用的。
+         必须写在这里而不是 Directory.Build.props，理由见该文件的说明。 -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
   </PropertyGroup>
 
 </Project>

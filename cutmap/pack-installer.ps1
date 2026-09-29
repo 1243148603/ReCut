@@ -92,6 +92,22 @@ if (Test-Path $resourcesDir) {
 Copy-Item (Join-Path $cutmapDir 'THIRD-PARTY-NOTICES.txt') $stage -Force
 Copy-Item (Join-Path $cutmapDir 'README.md') $stage -Force
 
+# --- 自包含闸门 -------------------------------------------------------------
+# 必须确认运行时真的被打进去了。这个检查是有来历的：
+# 曾经把 RuntimeIdentifier/SelfContained 挪进 Directory.Build.props 想"统一管理"，
+# 但那个文件在项目体之前求值、OutputType 还没设，条件恒为假——
+# 于是构建照样成功、安装包照样打得出来，只是**运行时没被打进去**，
+# 装到没装 .NET 的机器上直接起不来。这类失败必须在这里拦住。
+$coreclr = Join-Path $stage 'coreclr.dll'
+if (-not (Test-Path $coreclr)) {
+    throw "发布产物里没有 coreclr.dll —— 这不是自包含发布，打出来的包在没装 .NET 的机器上起不来。检查各 csproj 的 RuntimeIdentifier / SelfContained（不能放在 Directory.Build.props）。"
+}
+$runtimeFiles = (Get-ChildItem $stage -Filter 'System.*.dll' -File).Count
+if ($runtimeFiles -lt 50) {
+    throw "发布产物里只有 $runtimeFiles 个 System.*.dll，不像是自包含的运行时。"
+}
+Write-Host "   自包含校验通过（$runtimeFiles 个运行时程序集）"
+
 Get-ChildItem $stage -Filter '*.pdb' -Recurse -File | Remove-Item -Force
 Get-ChildItem $stage -Filter 'CutMap*.xml' -File | Remove-Item -Force
 

@@ -33,6 +33,8 @@
       EnableCompressionInSingleFile：把打进包的内容压一遍，
       安装器本体会从 ~150 MB 降到 ~60 MB。
     -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
     <PublishSingleFile>true</PublishSingleFile>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>

@@ -39,11 +39,23 @@ import os
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 BASE = "https://geo.datav.aliyun.com/areas_v3/bound/{}_full.json"
 ROOT = "100000"          # 全国
 COUNTRY_PREFIX = "156"   # 中国在国家行政区划代码里的前缀
+
+# --- 天地图（第二条数据源）---
+# 官方文档：GET /v2/administrative?postStr={...}&tk=KEY
+# 旧版 /administrative（V1.0）官方标注已于 2024-06-30 下线。
+TIANDITU_URL = "https://api.tianditu.gov.cn/v2/administrative"
+KEY_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".tianditu_key")
+SK_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".tianditu_sk")
+
+# 天地图服务端对 UA 有过滤：自定义 UA 会被打成 500，浏览器 UA 才返回规范 JSON。
+_BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+               "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CACHE = os.path.join(HERE, ".cache")
@@ -53,6 +65,94 @@ WORKERS = 6
 
 # 九段线这类要素的 adcode 不是纯数字（100000_JD），它们没有行政区划代码。
 _NON_NUMERIC = object()
+
+
+def _read_secret(cli_value, env_name, file_path):
+    """按 命令行 > 环境变量 > 本机文件 的顺序取凭据。
+
+    凭据不写进脚本本身：写进去再删，git 历史里仍然留着。
+    """
+    if cli_value:
+        return cli_value.strip()
+    from_env = os.environ.get(env_name)
+    if from_env:
+        return from_env.strip()
+    if os.path.exists(file_path):
+        with io.open(file_path, encoding="utf-8") as f:
+            return f.read().strip()
+    return None
+
+
+def tianditu_call(code, tk, sk=None, need_all=True, need_polygon=True, use_cache=True):
+    """调一次天地图政区要素。
+
+    searchType=0 表示按行政区划代码查询。needAll 一次取回所有子节点——
+    全国三级共约 3200 个区域，逐个查要 3200 次调用，能一次拿就不要分次。
+    """
+    post = json.dumps({
+        "searchWord": str(code),
+        "searchType": "0",
+        "needSubInfo": "true",
+        "needAll": "true" if need_all else "false",
+        "needPolygon": "true" if need_polygon else "false",
+        "needPre": "true",
+    }, ensure_ascii=False)
+
+    params = {"postStr": post, "tk": tk}
+    if sk:
+        # 浏览器端应用经代理转发时补的授权，见《天地图-Key申请教程》§3b。
+        params["sk"] = sk
+    url = TIANDITU_URL + "?" + urllib.parse.urlencode(params)
+
+    cache_path = os.path.join(CACHE, "tdt_{}{}.json".format(
+        code, "" if need_all else "_sub"))
+    if use_cache and os.path.exists(cache_path):
+        with io.open(cache_path, encoding="utf-8") as f:
+            return json.load(f)
+
+    last = None
+    for attempt in range(RETRIES):
+        try:
+            # UA 必须像浏览器。实测：自定义 UA（如 "CutMap/0.1"）会被服务端
+            # 打成 **500 Internal Server Error**，而带浏览器 UA 时返回的是规范的
+            # JSON 错误（如 301013 权限类型错误）。500 会把人引向"参数写错了"，
+            # 其实跟参数无关——这个坑已实测确认。
+            req = urllib.request.Request(url, headers={"User-Agent": _BROWSER_UA})
+            with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+                raw = resp.read().decode("utf-8")
+            data = json.loads(raw)
+            os.makedirs(CACHE, exist_ok=True)
+            with io.open(cache_path, "w", encoding="utf-8") as f:
+                f.write(raw)
+            return data
+        except urllib.error.HTTPError as e:
+            # 天地图用 4xx 返回**有意义的 JSON**（如 301013 权限类型错误）。
+            # 不读 body 的话只剩一句 "HTTP Error 403"，把最有用的信息丢了。
+            body = e.read().decode("utf-8", "replace")
+            try:
+                detail = json.loads(body)
+            except ValueError:
+                detail = {"raw": body[:300]}
+
+            hint = {
+                "301013": "Key 权限类型错误：这个 Key 是「浏览器端」，脚本要用"
+                          "「服务器端」（或给浏览器端应用开安全密钥 sk）。"
+                          "见 天地图-Key申请教程.md",
+                "301012": "Key 无效或已过期。",
+                "301014": "Key 不存在的服务类型。",
+            }.get(str(detail.get("code")), "")
+            message = "code={} msg={} resolve={}".format(
+                detail.get("code"), detail.get("msg"), detail.get("resolve"))
+            if hint:
+                message += "\n  → " + hint
+            # 鉴权类错误重试没有意义，直接抛。
+            if str(detail.get("code", "")).startswith("301"):
+                raise RuntimeError(message)
+            last = RuntimeError("HTTP {} {}".format(e.code, message))
+        except Exception as e:  # noqa: BLE001
+            last = e
+        time.sleep(1.5 * (attempt + 1))
+    raise RuntimeError("天地图取 {} 失败：{}".format(code, last))
 
 
 def fetch(adcode, session_headers=None):
@@ -127,11 +227,70 @@ def write(name, features):
     return len(features)
 
 
+def probe_tianditu(code, tk, sk):
+    """把天地图的原始返回原样打出来，不改写、不解析。
+
+    存在的理由：官方文档把边界字段写作 `points`（"行政区域范围"），但**没有给出
+    它的确切格式**——是 "lon,lat;lon,lat" 这样的字符串，还是嵌套数组，文档里没说。
+    盲写解析器多半要返工，所以先拿一个真实的行政区把形状看清楚。
+    """
+    try:
+        data = tianditu_call(code, tk, sk, use_cache=False)
+    except RuntimeError as e:
+        print("请求失败：{}".format(e))
+        return 2
+
+    print("returncode =", data.get("returncode"))
+    print("msg        =", data.get("msg"))
+    print("dataversion=", data.get("dataversion"))
+    items = data.get("data") or []
+    print("data 条数  =", len(items))
+    if not items:
+        print()
+        print("没有数据。若是 301013，说明 Key 权限类型不对（见教程 §0）；")
+        print("若是 101，说明没查到——换个代码试试。")
+        return 1
+
+    first = items[0]
+    print()
+    print("第一条的字段：")
+    for k, v in first.items():
+        text = json.dumps(v, ensure_ascii=False)
+        print("  {:16s} {} {}".format(k, type(v).__name__, text[:160]))
+
+    print()
+    print("完整原文（前 1200 字符）：")
+    print(json.dumps(data, ensure_ascii=False)[:1200])
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--source", choices=["datav", "tianditu"], default="datav",
+                        help="数据源。datav 免密（默认）；tianditu 需要 Key")
+    parser.add_argument("--key", help="天地图 Key（也可用环境变量 TIANDITU_KEY 或 .tianditu_key 文件）")
+    parser.add_argument("--sk", help="天地图安全密钥（浏览器端 Key 经代理转发时用）")
+    parser.add_argument("--probe", metavar="CODE",
+                        help="只探一个行政区，打印原始返回，不产出文件（用于核对字段格式）")
     parser.add_argument("--resume", action="store_true",
                         help="用 .cache 里的缓存，不重新下载已有的")
     args = parser.parse_args()
+
+    if args.source == "tianditu":
+        tk = _read_secret(args.key, "TIANDITU_KEY", KEY_FILE)
+        if not tk:
+            sys.exit(
+                "没有天地图 Key。三种给法任选其一：\n"
+                "  --key 你的key\n"
+                "  set TIANDITU_KEY=你的key\n"
+                "  把 key 写进 {}\n"
+                "申请步骤见 天地图-Key申请教程.md".format(KEY_FILE))
+        sk = _read_secret(args.sk, "TIANDITU_SK", SK_FILE)
+        if args.probe:
+            sys.exit(probe_tianditu(args.probe, tk, sk))
+        sys.exit("天地图的完整抓取尚未实现——先用 --probe 100000 看返回格式，"
+                 "确认 points 字段的形状后再补解析。")
+
     if not args.resume and os.path.exists(CACHE):
         import shutil
         shutil.rmtree(CACHE)

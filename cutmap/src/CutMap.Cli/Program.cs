@@ -97,27 +97,34 @@ internal static class Program
     private static int Usage()
     {
         Console.Error.WriteLine("""
-            CutMap.Cli - headless diagnostics
+            CutMap 命令行工具 —— 无界面，用于自动化与排障
 
-              version              print GDAL release and PROJ data directory
-              warp-gate [repo] [out]
-                                   M0 gate 1: mosaic 30 DEMs and compare the
-                                   checksum against the baseline (expect 58775)
-              ctb-gate [repo]      M0 gate 2: ctb-tile subprocess, live progress,
-                                   and the exit-code-0-on-failure trap
-              grid-gate [repo]     M1 gate: tile-grid arithmetic vs the baseline
-              warp [in] [out] [W S E N]
-                                   M2: mosaic + clip + algo metadata json
-              slice <tif> [out] [maxzoom]
-                                   M1: slice a GeoTIFF into terrain tiles
-              publish <tiles> [tif]
-                                   write layer.json / README / metadata (no zip)
-              package [tiles] [tif] [out]
-                                   M3: layer.json, dual artifacts, zip
-              download [--network] M4: tile enumeration and URL templates
-              boundary             M5: boundaries, vector clip, export
-              warp-vector <code>   M5: clip real DEMs by a real boundary
-              verify [tiles] [dem] M6: is this tile set loadable by Cesium?
+            用法：CutMap.Cli <命令> [参数]
+
+            日常使用
+              slice <栅格> [输出目录] [最深层级]
+                                     切成 Cesium 地形瓦片
+              warp <输入目录> [输出文件] [西 南 东 北]
+                                     多幅 DEM 拼接裁剪 + 算法元数据
+              warp-vector <行政区代码> [输出文件]
+                                     按真实行政边界裁剪（默认 156500000 重庆市）
+              publish <瓦片目录> [裁剪后的 tif]
+                                     写 layer.json / 部署说明 / 算法元数据（不打 zip）
+              package [瓦片目录] [tif] [输出目录]
+                                     打包与双产物（三种开关组合的验收）
+              download [--network]   分幅枚举与 URL 模板展开
+              verify [瓦片目录] [源 DEM]
+                                     校验瓦片集能否被 Cesium 加载
+
+            回归闸门（改了瓦片网格或 GDAL 版本之后跑）
+              grid-gate              瓦片网格算术对基线（15 层 223,495）
+              warp-gate              30 幅拼接，对基线校验和（期望 58775）
+              ctb-gate               ctb-tile 子进程、实时进度、取消、退出码陷阱
+              boundary               边界加载 / 过滤 / 矢量裁剪 / dissolve
+
+              version                打印 GDAL 版本与 PROJ 数据目录
+
+            退出码：0 成功，1 失败，2 用法错误。所有输出为 UTF-8。
             """);
         return 2;
     }

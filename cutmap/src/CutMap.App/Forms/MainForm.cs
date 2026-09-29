@@ -170,11 +170,14 @@ public sealed class MainForm : Form
         using var chooser = new TaskChooserForm();
         if (chooser.ShowDialog(this) != DialogResult.OK) return;
 
+        var preset = chooser.ChosenPreset;
+        if (preset is not null) AppendLog($"使用预设：{preset.Name}");
+
         Job? job = chooser.Kind switch
         {
-            TaskKind.Mosaic => BuildMosaicJob(),
-            TaskKind.Slice => BuildSliceJob(),
-            TaskKind.Package => BuildPackageJob(),
+            TaskKind.Mosaic => BuildMosaicJob(preset),
+            TaskKind.Slice => BuildSliceJob(preset),
+            TaskKind.Package => BuildPackageJob(preset),
             _ => null,
         };
         if (job is not null) Enqueue(job);
@@ -578,9 +581,12 @@ public sealed class MainForm : Form
         Enqueue(job);
     }
 
-    private SliceJob? BuildSliceJob(string? input, string? output, int? maxZoom)
+    private SliceJob? BuildSliceJob(TaskPreset? preset = null)
+        => BuildSliceJob(null, null, preset?.MaxZoom, preset);
+
+    private SliceJob? BuildSliceJob(string? input, string? output, int? maxZoom, TaskPreset? preset = null)
     {
-        using var dialog = new SliceForm(input, output, maxZoom);
+        using var dialog = new SliceForm(input, output, maxZoom, preset);
         if (dialog.ShowDialog(this) != DialogResult.OK) return null;
         return new SliceJob
         {
@@ -590,9 +596,16 @@ public sealed class MainForm : Form
         };
     }
 
-    private MosaicJob? BuildMosaicJob(string? output, IReadOnlyList<string>? boundaryCodes = null)
+    private MosaicJob? BuildMosaicJob(TaskPreset? preset = null)
+        => BuildMosaicJob(null, preset?.BoundaryCodes, preset);
+
+    private MosaicJob? BuildMosaicJob(string? output, IReadOnlyList<string>? boundaryCodes = null,
+                                      TaskPreset? preset = null)
     {
-        using var dialog = new MosaicForm(initialOutput: output, initialBoundaryCodes: boundaryCodes);
+        using var dialog = new MosaicForm(
+            initialOutput: output ?? PresetOutput(preset),
+            initialBoundaryCodes: boundaryCodes,
+            preset: preset);
         if (dialog.ShowDialog(this) != DialogResult.OK) return null;
         return new MosaicJob
         {
@@ -605,9 +618,13 @@ public sealed class MainForm : Form
         };
     }
 
-    private PackageJob? BuildPackageJob(string? tiles, string? tif, string? output)
+    private PackageJob? BuildPackageJob(TaskPreset? preset = null)
+        => BuildPackageJob(null, null, null, preset);
+
+    private PackageJob? BuildPackageJob(string? tiles, string? tif, string? output,
+                                        TaskPreset? preset = null)
     {
-        using var dialog = new PackageForm(tiles, tif, output);
+        using var dialog = new PackageForm(tiles, tif, output, preset);
         if (dialog.ShowDialog(this) != DialogResult.OK) return null;
         return new PackageJob
         {
@@ -747,6 +764,19 @@ public sealed class MainForm : Form
         _suspendItem.Enabled = job is not null && !job.IsTerminal && !ReferenceEquals(job, _current);
         _suspendItem.Text = job?.IsSuspended == true ? "恢复" : "挂起";
         _removeItem.Enabled = job?.IsTerminal == true;
+    }
+
+    /// <summary>预设里没有输出路径（那与具体机器有关），给一个基于预设名的默认值。</summary>
+    private static string? PresetOutput(TaskPreset? preset) =>
+        preset is null ? null : Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+            "CutMap", SanitizeName(preset.Name));
+
+    private static string SanitizeName(string name)
+    {
+        var invalid = Path.GetInvalidFileNameChars();
+        var cleaned = new string([.. name.Select(c => invalid.Contains(c) ? '_' : c)]);
+        return string.IsNullOrWhiteSpace(cleaned) ? "cutmap" : cleaned;
     }
 
     private void SetStatus(string text) => _status.Text = text;

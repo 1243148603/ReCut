@@ -53,8 +53,10 @@ public sealed class MosaicForm : Form
     /// 预填的行政区划编码（从历史重跑时用）。传编码而不是几何：
     /// 历史里只存了编码，几何从边界库现取——几何动辄几十万顶点，存进去会把历史撑爆。
     /// </param>
+    /// <param name="preset">任务预设（FR-08）。给了就按它预填范围/重采样/元数据开关。</param>
     public MosaicForm(IReadOnlyList<string>? initialInputs = null, string? initialOutput = null,
-                      IReadOnlyList<string>? initialBoundaryCodes = null)
+                      IReadOnlyList<string>? initialBoundaryCodes = null,
+                      TaskPreset? preset = null)
     {
         Text = "新建拼接裁剪任务";
         StartPosition = FormStartPosition.CenterParent;
@@ -63,7 +65,18 @@ public sealed class MosaicForm : Form
         Font = new Font("Microsoft YaHei UI", 9F);
 
         BuildLayout();
-        ApplyPreset(PresetStore.Chongqing);
+
+        // 预设优先于内置的重庆范围：用户选了预设就是要那套参数。
+        ApplyPreset(preset?.ClipBox is { } presetBox
+            ? new ClipPreset { Id = "preset", Name = "预设", Bounds = [presetBox.West, presetBox.South, presetBox.East, presetBox.North] }
+            : PresetStore.Chongqing);
+        if (preset is not null)
+        {
+            _resampling.SelectedItem = preset.Resampling;
+            _metadata.Checked = preset.WriteMetadata;
+            if (preset.ClipBox is null && preset.BoundaryCodes is { Length: > 0 })
+                _useBoundary.Checked = true;
+        }
 
         foreach (var path in initialInputs ?? [])
         {

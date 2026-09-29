@@ -30,6 +30,7 @@ public sealed record ClipPreset
 public sealed class PresetStore
 {
     private readonly List<ClipPreset> _clip = [];
+    private readonly List<TaskPreset> _tasks = [];
 
     private static readonly JsonSerializerOptions WriteOptions = new()
     {
@@ -38,6 +39,25 @@ public sealed class PresetStore
     };
 
     /// <summary>内置的重庆全域。范围取自教程 §4.2 的 -te，PRD FR-07 点名要内置。</summary>
+    /// <summary>
+    /// 内置的"重庆全域"任务预设：204 教程 §4.2 的完整口径，
+    /// 从裁剪范围到 layer.json 字段一站式带出。
+    /// </summary>
+    public static TaskPreset ChongqingTask { get; } = new()
+    {
+        Id = "task-chongqing",
+        Name = "重庆全域（204 教程口径）",
+        Description = "裁剪 105.3 28.1 110.2 32.2，双线性重采样，切片层级自动",
+        Bounds = [105.3, 28.1, 110.2, 32.2],
+        Resampling = "bilinear",
+        WriteMetadata = true,
+        MaxZoom = null,
+        LayerName = "chongqing",
+        LayerDescription = "Chongqing DEM terrain tiles (Copernicus GLO-30, 30m)",
+        LayerVersion = "1.1.0",
+        IsBuiltIn = true,
+    };
+
     public static ClipPreset Chongqing { get; } = new()
     {
         Id = "chongqing",
@@ -50,10 +70,40 @@ public sealed class PresetStore
     public PresetStore()
     {
         _clip.Add(Chongqing);
+        _tasks.Add(ChongqingTask);
         Load();
     }
 
     public IReadOnlyList<ClipPreset> ClipPresets => _clip;
+
+    public IReadOnlyList<TaskPreset> TaskPresets => _tasks;
+
+    public TaskPreset? TaskById(string id) => _tasks.FirstOrDefault(p => p.Id == id);
+
+    public void SaveTask(TaskPreset preset)
+    {
+        var index = _tasks.FindIndex(p => p.Id == preset.Id);
+        if (index < 0)
+        {
+            _tasks.Add(preset);
+        }
+        else
+        {
+            // 内置预设可编辑，但改出来的结果以新 Id 另存——否则下次升级换了内置定义，
+            // 用户改的那份会被覆盖。（与裁剪预设同样的处理。）
+            _tasks[index] = preset with { IsBuiltIn = _tasks[index].IsBuiltIn };
+        }
+        Persist();
+    }
+
+    public bool DeleteTask(string id)
+    {
+        var index = _tasks.FindIndex(p => p.Id == id);
+        if (index < 0 || _tasks[index].IsBuiltIn) return false;
+        _tasks.RemoveAt(index);
+        Persist();
+        return true;
+    }
 
     public void SaveClip(ClipPreset preset)
     {
@@ -90,6 +140,8 @@ public sealed class PresetStore
 
             foreach (var clip in loaded.Clip ?? [])
                 if (!clip.IsBuiltIn && _clip.All(p => p.Id != clip.Id)) _clip.Add(clip);
+            foreach (var task in loaded.Task ?? [])
+                if (!task.IsBuiltIn && _tasks.All(p => p.Id != task.Id)) _tasks.Add(task);
         }
         catch (Exception)
         {
@@ -104,6 +156,7 @@ public sealed class PresetStore
             var payload = new Persisted
             {
                 Clip = [.. _clip.Where(p => !p.IsBuiltIn)],
+                Task = [.. _tasks.Where(p => !p.IsBuiltIn)],
             };
             File.WriteAllText(AppPaths.UserPresetsFile,
                               JsonSerializer.Serialize(payload, WriteOptions),
@@ -118,5 +171,6 @@ public sealed class PresetStore
     private sealed record Persisted
     {
         [JsonPropertyName("clip")] public List<ClipPreset>? Clip { get; init; }
+        [JsonPropertyName("task")] public List<TaskPreset>? Task { get; init; }
     }
 }

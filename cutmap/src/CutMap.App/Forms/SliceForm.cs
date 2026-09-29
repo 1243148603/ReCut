@@ -29,8 +29,9 @@ public sealed class SliceForm : Form
     /// <param name="initialInput">从历史重跑时预填的输入栅格。</param>
     /// <param name="initialOutput">预填的输出目录。</param>
     /// <param name="initialMaxZoom">预填的最深层级；null 表示"自动"。</param>
+    /// <param name="preset">任务预设（FR-08）。只取其中的切片相关字段。</param>
     public SliceForm(string? initialInput = null, string? initialOutput = null,
-                     int? initialMaxZoom = null)
+                     int? initialMaxZoom = null, CutMap.Core.Store.TaskPreset? preset = null)
     {
         Text = "新建切片任务";
         FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -44,11 +45,12 @@ public sealed class SliceForm : Form
 
         if (initialInput is not null) LoadInput(initialInput);
         if (initialOutput is not null) _output.Text = initialOutput;
-        if (initialMaxZoom is { } zoom)
+        var zoom = initialMaxZoom ?? preset?.MaxZoom;
+        if (zoom is { } value)
         {
             _autoZoom.Checked = false;
             _maxZoom.Enabled = true;
-            _maxZoom.Value = Math.Clamp(zoom, _maxZoom.Minimum, _maxZoom.Maximum);
+            _maxZoom.Value = Math.Clamp(value, _maxZoom.Minimum, _maxZoom.Maximum);
         }
         UpdateEstimate();
     }

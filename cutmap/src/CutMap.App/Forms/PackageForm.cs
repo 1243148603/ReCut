@@ -40,8 +40,10 @@ public sealed class PackageForm : Form
     /// <param name="initialTiles">从历史重跑时预填的瓦片目录。</param>
     /// <param name="initialTif">预填的裁剪 GeoTIFF。</param>
     /// <param name="initialOutput">预填的 zip 输出目录。</param>
+    /// <param name="preset">任务预设（FR-08）。带出 layer.json 字段与 zip 开关。</param>
     public PackageForm(string? initialTiles = null, string? initialTif = null,
-                       string? initialOutput = null)
+                       string? initialOutput = null,
+                       CutMap.Core.Store.TaskPreset? preset = null)
     {
         Text = "打包 / 导出";
         StartPosition = FormStartPosition.CenterParent;
@@ -54,6 +56,15 @@ public sealed class PackageForm : Form
         if (initialTiles is not null) { _tilesDir.Text = initialTiles; _wantTiles.Checked = true; }
         if (initialTif is not null) { _tifPath.Text = initialTif; _wantAlgo.Checked = true; }
         if (initialOutput is not null) _output.Text = initialOutput;
+
+        if (preset is not null)
+        {
+            _layerName.Text = preset.LayerName;
+            _layerDescription.Text = preset.LayerDescription;
+            _layerVersion.Text = preset.LayerVersion;
+            _zipTiles.Checked = preset.ZipTiles;
+            _zipAlgo.Checked = preset.ZipAlgo;
+        }
         UpdateEnabled();
     }
 

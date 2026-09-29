@@ -72,7 +72,7 @@ internal static class Payload
         var payloadStart = file.Length - TrailerBytes - length;
 
         file.Seek(payloadStart, SeekOrigin.Begin);
-        using var slice = new SubStream(file, length);
+        using var slice = new SubStream(file, payloadStart, length);
         using var zip = new ZipArchive(slice, ZipArchiveMode.Read);
 
         var entries = zip.Entries.Where(e => !string.IsNullOrEmpty(e.Name)).ToArray();
@@ -106,12 +106,14 @@ internal static class Payload
     }
 
     /// <summary>
-    /// 只读的一段文件视图。
+    /// 文件里的一段只读视图，坐标从 0 开始（即把 <paramref name="start"/> 处当作流开头）。
     ///
-    /// ZipArchive 要能 Seek 才能读中央目录，而直接给 FileStream 会让它一路读到
-    /// exe 末尾去（那里是尾部记录，不是合法 zip 数据）。所以裁一段出来。
+    /// ZipArchive 要能随意 Seek——它先跳到尾部读中央目录，再跳回去读条目。
+    /// 所以每次 Seek **必须把底层 FileStream 一起挪过去**。
+    /// 最初只记了个 _position 而没动 inner，顺序读看不出来，一跳转就全错，
+    /// 报的是 "End of Central Directory record could not be found"。
     /// </summary>
-    private sealed class SubStream(FileStream inner, long length) : Stream
+    private sealed class SubStream(FileStream inner, long start, long length) : Stream
     {
         private long _position;
 
@@ -122,7 +124,7 @@ internal static class Payload
         public override long Position
         {
             get => _position;
-            set => _position = value;
+            set => Seek(value, SeekOrigin.Begin);
         }
 
         public override int Read(byte[] buffer, int offset, int count)
@@ -144,6 +146,7 @@ internal static class Payload
                 SeekOrigin.End => length + offset,
                 _ => _position,
             };
+            inner.Seek(start + _position, SeekOrigin.Begin);
             return _position;
         }
 

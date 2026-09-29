@@ -1,4 +1,4 @@
-# ⚠ 本文件必须保存为 **UTF-8 with BOM**。
+﻿# ⚠ 本文件必须保存为 **UTF-8 with BOM**。
 #   Windows PowerShell 5.1 在没有 BOM 时按 ANSI（本机 GBK）解析 .ps1 文本，
 #   中文注释会被拆成乱码字节、引号配对错位，报的是"字符串缺少终止符"这类
 #   与真实原因无关的语法错误。改这个文件时请确认编辑器保留了 BOM。
@@ -98,16 +98,22 @@ $payloadZip = Join-Path $distDir "payload-$version.zip"
 if (Test-Path $payloadZip) { Remove-Item $payloadZip -Force }
 Write-Host '   压缩载荷（几分钟，约 400 MB）…'
 Add-Type -AssemblyName System.IO.Compression.FileSystem
+# includeBaseDirectory 必须是 $false：安装载荷的**根目录就是程序根目录**。
+# 传 $true 会把 "payload-0.1.0/" 套在最外层，安装器解压后找不到 CutMap.App.exe。
+# （绿色版 zip 那边相反，那个要 $true——用户解压出来应该是一个文件夹。）
 [System.IO.Compression.ZipFile]::CreateFromDirectory(
-    $stage, $payloadZip, [System.IO.Compression.CompressionLevel]::Optimal, $true)
+    $stage, $payloadZip, [System.IO.Compression.CompressionLevel]::Optimal, $false)
 $payloadMb = [math]::Round((Get-Item $payloadZip).Length / 1MB, 1)
 Write-Host "   载荷：$payloadMb MB"
 
 Write-Host '== 4/5 发布安装器 =='
 $setupStage = Join-Path $distDir "setup-$version"
 if (Test-Path $setupStage) { Remove-Item $setupStage -Recurse -Force }
+# -p:Version 必须传：安装器用程序集版本填注册表的 DisplayVersion。
+# 不传的话它取默认的 1.0.0，与 CutMapInfo.Version 对不上——
+# 「应用和功能」里显示的版本会是错的。
 dotnet publish (Join-Path $cutmapDir 'src\CutMap.Setup\CutMap.Setup.csproj') `
-    -c $Configuration -o $setupStage --nologo
+    -c $Configuration -o $setupStage -p:Version=$version --nologo
 if ($LASTEXITCODE -ne 0) { throw 'dotnet publish (Setup) 失败' }
 
 Write-Host '== 5/5 拼接 =='

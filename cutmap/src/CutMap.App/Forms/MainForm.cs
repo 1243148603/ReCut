@@ -26,6 +26,8 @@ public sealed class MainForm : Form
     private readonly ToolStripProgressBar _progress = new();
     private readonly ToolStripButton _cancelButton = new();
     private readonly ToolStripButton _pauseButton = new();
+    private readonly ToolStripButton _queueButton = new();
+    private bool _queuePaused;
     private readonly ToolStripMenuItem _suspendItem = new("挂起");
     private readonly ToolStripMenuItem _removeItem = new("移除");
 
@@ -79,10 +81,18 @@ public sealed class MainForm : Form
         _cancelButton.Enabled = false;
         _cancelButton.Click += (_, _) => CancelCurrent();
 
+        // 队列级暂停（FR-11）与"运行中暂停"是两回事，所以是两个按钮：
+        //   运行中暂停：只对下载有效，停的是**当前这个任务**
+        //   队列暂停：停的是**调度**，当前任务自然跑完，之后不再开新的
+        _queueButton.Text = "暂停队列";
+        _queueButton.DisplayStyle = ToolStripItemDisplayStyle.Text;
+        _queueButton.Click += (_, _) => ToggleQueue();
+
         toolbar.Items.Add(newMosaic);
         toolbar.Items.Add(download);
         toolbar.Items.Add(new ToolStripSeparator());
         toolbar.Items.Add(_pauseButton);
+        toolbar.Items.Add(_queueButton);
         toolbar.Items.Add(_cancelButton);
         toolbar.Items.Add(new ToolStripSeparator());
         toolbar.Items.Add(history);
@@ -242,9 +252,28 @@ public sealed class MainForm : Form
 
     // ---------------------------------------------------------------- 队列
 
+    /// <summary>FR-11 的队列级暂停：不再开始新任务，正在运行的自然跑完。</summary>
+    private void ToggleQueue()
+    {
+        _queuePaused = !_queuePaused;
+        _queueButton.Text = _queuePaused ? "恢复队列" : "暂停队列";
+
+        if (_queuePaused)
+        {
+            AppendLog("队列已暂停：当前任务跑完后不再开始新任务。");
+            SetStatus(_current is null ? "队列已暂停" : $"{_current.TypeName}：{_current.Display}（队列已暂停）");
+            return;
+        }
+
+        AppendLog("队列已恢复。");
+        SetStatus("就绪");
+        StartNext();
+    }
+
     private void StartNext()
     {
         if (_current is not null) return;
+        if (_queuePaused) return;
 
         // 挂起的任务留在队列里但不被调度（FR-11），所以这里挑的是
         // "第一个没被挂起的"，而不是简单的队首。
@@ -324,7 +353,10 @@ public sealed class MainForm : Form
                 _pauseButton.Enabled = false;
                 _pauseButton.Text = "暂停";
                 _progress.Visible = false;
-                SetStatus("就绪");
+                var waiting = _pending.Count(j => !j.IsSuspended && j.Status == JobStatus.Pending);
+                SetStatus(_queuePaused
+                    ? $"队列已暂停（{waiting} 个任务等待中）"
+                    : "就绪");
                 StartNext();
             });
         }
@@ -504,13 +536,33 @@ public sealed class MainForm : Form
             }
         }
 
+        IReadOnlyList<string> GetBoundaryCodes()
+        {
+            try
+            {
+                using var document = JsonDocument.Parse(entry.ParametersJson);
+                if (!document.RootElement.TryGetProperty("boundaries", out var array) ||
+                    array.ValueKind != JsonValueKind.Array)
+                    return [];
+
+                // 属性名是 JsonSerializer 按匿名类型的属性名写的，首字母大写。
+                return [.. array.EnumerateArray()
+                    .Select(item => item.TryGetProperty("Code", out var code) ? code.GetString() : null)
+                    .OfType<string>()];
+            }
+            catch (JsonException)
+            {
+                return [];
+            }
+        }
+
         var kind = Get("kind") ?? "";
         AppendLog($"从历史重跑：{entry.Type}（{entry.StartedAt.ToLocalTime():MM-dd HH:mm}）");
 
         Job? job = kind switch
         {
             "slice" => BuildSliceJob(Get("input"), Get("output"), GetInt("maxZoom")),
-            "mosaic" or "mosaic-vector" => BuildMosaicJob(Get("output")),
+            "mosaic" or "mosaic-vector" => BuildMosaicJob(Get("output"), GetBoundaryCodes()),
             "package" => BuildPackageJob(Get("tiles"), Get("tif"), Get("output")),
             "download" => BuildDownloadJob(
                 Get("saveDirectory"), Get("sourceId"),
@@ -538,9 +590,9 @@ public sealed class MainForm : Form
         };
     }
 
-    private MosaicJob? BuildMosaicJob(string? output)
+    private MosaicJob? BuildMosaicJob(string? output, IReadOnlyList<string>? boundaryCodes = null)
     {
-        using var dialog = new MosaicForm(initialOutput: output);
+        using var dialog = new MosaicForm(initialOutput: output, initialBoundaryCodes: boundaryCodes);
         if (dialog.ShowDialog(this) != DialogResult.OK) return null;
         return new MosaicJob
         {

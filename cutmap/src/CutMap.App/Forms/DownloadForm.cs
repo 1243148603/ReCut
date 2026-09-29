@@ -2,6 +2,7 @@ using System.Globalization;
 using CutMap.Core.Download;
 using CutMap.Core.Geo;
 using CutMap.Core.Store;
+using CutMap.Core.Vector;
 
 namespace CutMap.App.Forms;
 
@@ -24,6 +25,12 @@ public sealed class DownloadForm : Form
     private readonly Button _ok = new();
 
     private IReadOnlyList<DemTile> _tiles = [];
+
+    private readonly CheckBox _useBoundary = new();
+    private readonly Button _pickBoundary = new();
+    private readonly Label _boundarySummary = new();
+    private readonly BoundaryStore _boundaryStore = BoundaryStore.Locate();
+    private IReadOnlyList<BoundaryFeature> _boundaries = [];
 
     private static readonly string[] AreaLabels = ["西", "南", "东", "北"];
 
@@ -118,10 +125,28 @@ public sealed class DownloadForm : Form
             areaRow.Controls.Add(box, i * 2 + 3, 0);
         }
 
+        _useBoundary.Text = "按行政区划（按边界真实相交推导，比外接矩形省流量）";
+        _useBoundary.AutoSize = true;
+        _useBoundary.CheckedChanged += (_, _) => UpdatePreview();
+        areaRow.Controls.Add(_useBoundary, 0, 2);
+        areaRow.SetColumnSpan(_useBoundary, 4);
+
+        _pickBoundary.Text = "选择边界…";
+        _pickBoundary.Width = 96;
+        _pickBoundary.Click += (_, _) => PickBoundary();
+        areaRow.Controls.Add(_pickBoundary, 4, 2);
+
+        _boundarySummary.AutoEllipsis = true;
+        _boundarySummary.ForeColor = SystemColors.GrayText;
+        areaRow.Controls.Add(_boundarySummary, 5, 2);
+        areaRow.SetColumnSpan(_boundarySummary, 5);
+
         _preview.Dock = DockStyle.Fill;
         _preview.Padding = new Padding(0, 4, 0, 0);
         areaRow.Controls.Add(_preview, 0, 1);
         areaRow.SetColumnSpan(_preview, 10);
+        areaRow.RowCount = 3;
+        areaBox.Height = 132;
         areaBox.Controls.Add(areaRow);
         root.Controls.Add(areaBox, 1, 0);
 
@@ -199,6 +224,26 @@ public sealed class DownloadForm : Form
         UpdatePreview();
     }
 
+    private void PickBoundary()
+    {
+        if (_boundaryStore.IsEmpty)
+        {
+            MessageBox.Show(this, _boundaryStore.Describe(), "没有边界数据",
+                            MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+        using var picker = new BoundaryPickerForm(_boundaryStore);
+        if (picker.ShowDialog(this) != DialogResult.OK) return;
+        _boundaries = picker.Selected;
+        _useBoundary.Checked = true;
+
+        // 把手填区域也同步成边界的外接矩形——保存目录与任务参数里要记一个范围，
+        // 按边界下载时用它的外接矩形是合理的口径。
+        var box = BoundaryExport.UnionBounds(_boundaries);
+        ApplyAreaTo(_area, box);
+        UpdatePreview();
+    }
+
     private static double Parse(TextBox box) =>
         double.TryParse(box.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out var v)
             ? v : double.NaN;
@@ -231,6 +276,35 @@ public sealed class DownloadForm : Form
             return;
         }
 
+        // 按行政区划时用**真实相交**推导分幅（FR-06）：重庆这样形状不规则的地方，
+        // 比外接矩形少下好几幅。
+        if (_useBoundary.Checked)
+        {
+            if (_boundaries.Count == 0)
+            {
+                SetPreview("请先选择行政区划边界。", Color.Firebrick, []);
+                return;
+            }
+            _boundarySummary.Text = "已选 " + string.Join("、", _boundaries.Select(b => b.Name));
+            _pickBoundary.Enabled = true;
+
+            var byBounds = DemTileGrid.Enumerate(area);
+            _tiles = BoundaryTiles.Enumerate(_boundaries);
+            if (_tiles.Count == 0)
+            {
+                SetPreview("选中的边界落不到任何 1° 分幅上。", Color.Firebrick, []);
+                return;
+            }
+            var saved = byBounds.Count - _tiles.Count;
+            _urlPreview.Text = "URL 预览：" + source.Expand(_tiles[0]);
+            _urlPreview.ForeColor = SystemColors.GrayText;
+            SetPreview($"按边界推导出 {_tiles.Count} 幅（{_tiles[0].Name} … {_tiles[^1].Name}），" +
+                       (saved > 0 ? $"比外接矩形省 {saved} 幅（约 {saved * 45} MB）。" : "与用外接矩形相当。"),
+                       Color.DarkGreen, _tiles);
+            return;
+        }
+
+        _boundarySummary.Text = "";
         _tiles = DemTileGrid.Enumerate(area);
         if (_tiles.Count == 0)
         {

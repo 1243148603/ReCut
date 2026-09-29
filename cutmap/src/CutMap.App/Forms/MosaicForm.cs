@@ -49,7 +49,12 @@ public sealed class MosaicForm : Form
     /// 预填的输入文件。用于「下载完这批 DEM → 继续处理」这条路径（FR-06），
     /// 免得用户刚下载完又得手动把 30 幅一个个选回来。
     /// </param>
-    public MosaicForm(IReadOnlyList<string>? initialInputs = null, string? initialOutput = null)
+    /// <param name="initialBoundaryCodes">
+    /// 预填的行政区划编码（从历史重跑时用）。传编码而不是几何：
+    /// 历史里只存了编码，几何从边界库现取——几何动辄几十万顶点，存进去会把历史撑爆。
+    /// </param>
+    public MosaicForm(IReadOnlyList<string>? initialInputs = null, string? initialOutput = null,
+                      IReadOnlyList<string>? initialBoundaryCodes = null)
     {
         Text = "新建拼接裁剪任务";
         StartPosition = FormStartPosition.CenterParent;
@@ -72,6 +77,20 @@ public sealed class MosaicForm : Form
             }
         }
         if (initialOutput is not null) _output.Text = initialOutput;
+
+        if (initialBoundaryCodes is { Count: > 0 })
+        {
+            var resolved = initialBoundaryCodes
+                .Select(code => _boundaryStore.ByCode(code))
+                .OfType<BoundaryFeature>()
+                .ToArray();
+            if (resolved.Length > 0)
+            {
+                _boundaries = resolved;
+                _useBoundary.Checked = true;
+            }
+        }
+
         if (_infos.Count > 0 && string.IsNullOrWhiteSpace(_output.Text))
         {
             var first = Path.GetDirectoryName(_infos[0].Path) ?? "";

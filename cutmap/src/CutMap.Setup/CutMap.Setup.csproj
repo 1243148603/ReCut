@@ -24,6 +24,21 @@
     <AssemblyName>CutMap-Setup</AssemblyName>
     <!-- 安装器自己不需要 PDB，几百 MB 的载荷旁边再放符号文件没意义 -->
     <DebugType>none</DebugType>
+
+    <!--
+      必须是单文件。自包含但非单文件时，publish 出来的是
+      「exe + dll + 一堆运行时文件」，exe 单独拿走跑不起来——实测报
+      "The application to execute does not exist: CutMap-Setup.dll"。
+      而我们要往 exe 后面追加载荷，就只能有一个文件。
+
+      IncludeNativeLibrariesForSelfExtract：把原生库也塞进包里，
+      否则单文件 exe 运行时还要在旁边找它们。
+      EnableCompressionInSingleFile：把打进包的内容压一遍，
+      安装器本体会从 ~150 MB 降到 ~60 MB。
+    -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
   </PropertyGroup>
 
 </Project>

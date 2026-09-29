@@ -1,3 +1,4 @@
+using CutMap.Core.Download;
 using CutMap.Core.Geo;
 using CutMap.Core.Vector;
 
@@ -131,6 +132,21 @@ internal static class BoundaryCommand
             ok &= Check("找得到巴南区", banan?.Name ?? "(无)", "巴南区");
             ok &= Check("巴南区归重庆市（直辖市无「市辖区」层，靠实际节点解析）",
                         banan?.Code is { } bc ? real.ParentOf(bc) ?? "(无)" : "(无)", "156500000");
+
+            // FR-06：按行政区划推导分幅，与"用外接矩形"对比。
+            // 重庆的形状不是方的，西北东南都有大片空角——省的就是这些。
+            var byBounds = DemTileGrid.Enumerate(BoundaryExport.UnionBounds([chongqing!]));
+            var byBoundary = BoundaryTiles.Enumerate([chongqing!]);
+            Console.WriteLine($"  按外接矩形推导分幅：{byBounds.Count} 幅");
+            Console.WriteLine($"  按边界真实相交推导：{byBoundary.Count} 幅" +
+                              $"（省下 {byBounds.Count - byBoundary.Count} 幅，" +
+                              $"约 {(byBounds.Count - byBoundary.Count) * 45} MB）");
+            ok &= Check("按边界推到的不多于外接矩形",
+                        byBoundary.Count <= byBounds.Count);
+            ok &= Check("确实省了（边界不是矩形）", byBoundary.Count < byBounds.Count);
+            ok &= Check("推到的是外接矩形的子集",
+                        byBoundary.All(t => byBounds.Any(b => b.Name == t.Name)));
+            ok &= Check("重庆全域仍在 30 幅以内", byBoundary.Count is > 0 and <= 30);
 
             // 用真实边界裁一块真实 DEM：找一个覆盖测试栅格范围的区县。
             var testRaster = RasterInfo.Read(dem);

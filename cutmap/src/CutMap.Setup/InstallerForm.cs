@@ -1,5 +1,3 @@
-using System.Diagnostics;
-
 namespace CutMap.Setup;
 
 /// <summary>安装界面。装到 <c>%LOCALAPPDATA%\Programs\CutMap</c>，不需要管理员权限。</summary>
@@ -17,9 +15,7 @@ internal sealed class InstallerForm : Form
 
     public InstallerForm()
     {
-        _installDirectory = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "Programs", ShellIntegration.ProductName);
+        _installDirectory = InstallOperation.DefaultDirectory;
 
         Text = $"安装 {ShellIntegration.ProductName} {ShellIntegration.Version}";
         FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -33,9 +29,7 @@ internal sealed class InstallerForm : Form
 
         var existing = ShellIntegration.InstalledDirectory();
         if (existing is not null && !string.Equals(existing, _installDirectory, StringComparison.OrdinalIgnoreCase))
-        {
             _detail.Text = $"检测到另一处安装：{existing}\n本次会装到 {_installDirectory}，两者互不影响。";
-        }
     }
 
     private void BuildLayout()
@@ -62,14 +56,10 @@ internal sealed class InstallerForm : Form
         _detail.Padding = new Padding(20, 4, 20, 0);
         _detail.ForeColor = SystemColors.GrayText;
 
-        _progress.Dock = DockStyle.Top;
-        _progress.Height = 18;
+        _progress.Dock = DockStyle.Fill;
         _progress.Style = ProgressBarStyle.Continuous;
-        _progress.Margin = new Padding(20);
-
         var progressHost = new Panel { Dock = DockStyle.Top, Height = 30, Padding = new Padding(20, 8, 20, 0) };
         progressHost.Controls.Add(_progress);
-        _progress.Dock = DockStyle.Fill;
 
         var buttons = new FlowLayoutPanel
         {
@@ -119,47 +109,26 @@ internal sealed class InstallerForm : Form
 
         try
         {
-            if (Directory.Exists(_installDirectory))
-            {
-                // 覆盖安装前先清干净：旧版本可能留下已经不再分发的文件，
-                // 留着它们会让"装完还是老行为"这种问题特别难查。
-                _detail.Text = "清除上一版残留…";
-                Application.DoEvents();
-                Directory.Delete(_installDirectory, recursive: true);
-            }
-
             var progress = new Progress<(int Done, int Total, string Name)>(p =>
             {
-                _progress.Maximum = p.Total;
-                _progress.Value = Math.Min(p.Done, p.Total);
-                _detail.Text = $"正在展开 {p.Done}/{p.Total}：{p.Name}";
+                if (p.Total > 0)
+                {
+                    _progress.Maximum = p.Total;
+                    _progress.Value = Math.Min(p.Done, p.Total);
+                    _detail.Text = $"正在展开 {p.Done}/{p.Total}：{p.Name}";
+                }
+                else
+                {
+                    _detail.Text = p.Name + "…";
+                }
+                Application.DoEvents();
             });
 
-            var count = Payload.ExtractTo(_installDirectory, progress);
-            _detail.Text = $"展开 {count} 个文件，正在创建快捷方式…";
-            Application.DoEvents();
-
-            var appExe = Path.Combine(_installDirectory, "CutMap.App.exe");
-            if (!File.Exists(appExe))
-                throw new FileNotFoundException("安装包里没有 CutMap.App.exe", appExe);
-
-            // 把安装器自己复制进安装目录：卸载项要指向一个稳定的路径。
-            // 指向"用户当初双击的那个文件"是不行的——很多人装完就把安装包删了。
-            var setupInInstallDir = Path.Combine(_installDirectory, "CutMap-Setup.exe");
-            File.Copy(Environment.ProcessPath!, setupInInstallDir, overwrite: true);
-
-            ShellIntegration.CreateShortcut(ShellIntegration.StartMenuShortcut, appExe, _installDirectory);
-            ShellIntegration.CreateShortcut(ShellIntegration.DesktopShortcut, appExe, _installDirectory);
-            ShellIntegration.RegisterUninstall(_installDirectory, setupInInstallDir, TotalBytes(_installDirectory));
+            InstallOperation.Run(_installDirectory, progress, _launch.Checked);
 
             _progress.Value = _progress.Maximum;
             _detail.ForeColor = Color.DarkGreen;
             _detail.Text = "安装完成。";
-
-            if (_launch.Checked)
-            {
-                Process.Start(new ProcessStartInfo(appExe) { WorkingDirectory = _installDirectory });
-            }
 
             _installed = true;
             _action.Text = "完成";
@@ -177,20 +146,6 @@ internal sealed class InstallerForm : Form
             _action.Enabled = true;
             _close.Enabled = true;
             _launch.Enabled = true;
-        }
-    }
-
-    private static long TotalBytes(string directory)
-    {
-        try
-        {
-            return new DirectoryInfo(directory)
-                .EnumerateFiles("*", SearchOption.AllDirectories)
-                .Sum(f => f.Length);
-        }
-        catch (Exception)
-        {
-            return 0;
         }
     }
 }

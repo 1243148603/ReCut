@@ -100,6 +100,43 @@ internal static class BoundaryCommand
         ok &= Check("含 label 中心点", text.Contains("\"label\"", StringComparison.Ordinal));
         ok &= Check("含数据来源注明", text.Contains("合成数据", StringComparison.Ordinal));
 
+        // ---------- 四点五、CRS 检查（FR-14 的纠偏提示）----------
+        Console.WriteLine();
+        Console.WriteLine("四点五、坐标系检查");
+        var projected = Path.Combine(workDir, "projected.geojson");
+        File.WriteAllText(projected, """
+            {"type":"FeatureCollection",
+             "crs":{"type":"name","properties":{"name":"urn:ogc:def:crs:EPSG::3857"}},
+             "features":[{"type":"Feature","properties":{"name":"投影坐标测试","gb":"156999999"},
+              "geometry":{"type":"Polygon","coordinates":[[[11700000,3400000],[11710000,3400000],
+                           [11710000,3410000],[11700000,3410000],[11700000,3400000]]]}}]}
+            """);
+        var probeStore = new BoundaryStore();
+        var report = probeStore.ImportExternal(projected);
+        Console.WriteLine($"  导入投影坐标(3857)的文件：{report.Imported} 个要素，" +
+                          $"{report.Warnings.Count} 条警告");
+        foreach (var warning in report.Warnings)
+            Console.WriteLine("    · " + warning.ReplaceLineEndings(" / "));
+        ok &= Check("投影坐标系被识别并警告", report.HasWarnings);
+
+        var noCrs = Path.Combine(workDir, "no_crs.geojson");
+        File.WriteAllText(noCrs, """
+            {"type":"FeatureCollection",
+             "features":[{"type":"Feature","properties":{"name":"无坐标系测试","gb":"156999998"},
+              "geometry":{"type":"Polygon","coordinates":[[[105.4,28.5],[105.5,28.5],
+                           [105.5,28.6],[105.4,28.6],[105.4,28.5]]]}}]}
+            """);
+        var noCrsReport = new BoundaryStore().ImportExternal(noCrs);
+        Console.WriteLine($"  导入无坐标系声明的文件：{noCrsReport.Warnings.Count} 条警告");
+        foreach (var warning in noCrsReport.Warnings)
+            Console.WriteLine("    · " + warning.ReplaceLineEndings(" / "));
+        // GeoJSON **没写 crs 时按规范默认 WGS84**，GDAL 照此返回 4326，
+        // 所以不会报"没声明坐标系"——这是对的，不是漏报。
+        // "没声明"那条分支是给 Shapefile 之类留的（没有 .prj 时 GetSpatialRef 返回空）。
+        ok &= Check("GeoJSON 缺 crs 时按 WGS84 处理、不误报", !noCrsReport.HasWarnings);
+        ok &= Check("坐标合法的数据没有范围警告",
+                    noCrsReport.Warnings.All(w => !w.Contains("超出经纬度范围")));
+
         // ---------- 五、真实数据（DataV GeoAtlas，全国省/市/县）----------
         Console.WriteLine();
         Console.WriteLine("五、真实边界数据");

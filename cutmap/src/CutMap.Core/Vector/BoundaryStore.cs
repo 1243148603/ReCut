@@ -60,7 +60,7 @@ public sealed class BoundaryStore
                 store._missing.Add(path);
                 continue;
             }
-            store.LoadFile(path, level);
+            store.LoadFile(path, level, reportProblems: true);
         }
         store.ResolveHierarchy();
         return store;
@@ -90,22 +90,31 @@ public sealed class BoundaryStore
     }
 
     /// <summary>导入外部边界（FR-14 的"数据源可替换"）。层级不明的记为「其他」。</summary>
-    public int ImportExternal(string path)
+    public ImportReport ImportExternal(string path)
     {
         var before = _features.Count;
-        LoadFile(path, BoundaryLevel.其他);
-        return _features.Count - before;
+        var warnings = LoadFile(path, BoundaryLevel.其他);
+        return new ImportReport(_features.Count - before, warnings);
     }
 
-    private void LoadFile(string path, BoundaryLevel level)
+    /// <summary>
+    /// 读一个文件。<paramref name="reportProblems"/> 为真时检查坐标系（只对导入的
+    /// 外部数据做——内置数据是体检过的，每次启动都报一遍没有意义）。
+    /// </summary>
+    /// <returns>面向用户的警告，可直接显示。</returns>
+    private List<string> LoadFile(string path, BoundaryLevel level, bool reportProblems = false)
     {
         GdalRuntime.EnsureReady();
+        var warnings = new List<string>();
 
         using var dataset = Ogr.Open(path, 0);
         if (dataset is null) throw new IOException($"打不开边界文件：{path}");
 
         var layer = dataset.GetLayerByIndex(0);
-        if (layer is null) return;
+        if (layer is null) return warnings;
+
+        if (reportProblems) CheckCoordinateSystem(layer, path, warnings);
+        var outOfRange = 0;
 
         layer.ResetReading();
         Feature? feature;
@@ -130,12 +139,84 @@ public sealed class BoundaryStore
             var envelope = new Envelope();
             geometry.GetEnvelope(envelope);
 
+            // 坐标明显不在经纬度范围内，多半是投影坐标（米）而非度。
+            // 这种数据直接拿来当 cutline 会裁出完全错误的地方，且不报错。
+            if (envelope.MinX < -180 || envelope.MaxX > 180 ||
+                envelope.MinY < -90 || envelope.MaxY > 90)
+                outOfRange++;
+
             _features.Add(new BoundaryFeature(
                 name,
                 code.Trim(),
                 level,
                 new BBox(envelope.MinX, envelope.MinY, envelope.MaxX, envelope.MaxY),
                 geometry.ExportToJson([])));
+        }
+
+        if (outOfRange > 0)
+        {
+            warnings.Add(
+                $"有 {outOfRange} 个要素的坐标超出经纬度范围（-180~180 / -90~90），" +
+                "看起来是投影坐标（米）而不是经纬度。\n" +
+                "直接用来裁剪会得到完全错误的位置，且不会报错——" +
+                "请先用 gdalwarp -t_srs EPSG:4326 转成经纬度。");
+        }
+
+        return warnings;
+    }
+
+    /// <summary>
+    /// 检查数据声明的坐标系（FR-14："含 CRS 纠偏提示"）。
+    ///
+    /// **只能查到"声明层面"的问题。** PRD 提到的 `china/` 那种
+    /// ".prj 声明与实际坐标不符"的情况，光看文件是查不出来的——声明说是 WGS84、
+    /// 坐标也落在合理范围内，但实际是 GCJ-02 偏移。那种只能靠范围检查兜底
+    /// （偏移通常只有几百米，落在范围内，查不出来），所以警告文案里如实说明。
+    /// </summary>
+    private static void CheckCoordinateSystem(
+        OSGeo.OGR.Layer layer, string path, List<string> warnings)
+    {
+        try
+        {
+            // 只用图层的 SRS：这个绑定里 DataSource 没有 GetSpatialRef。
+            // 图层的 SRS 为空时就是"没声明"，报出来即可。
+            using var srs = layer.GetSpatialRef();
+            var name = Path.GetFileName(path);
+
+            if (srs is null)
+            {
+                warnings.Add($"{name} 没有声明坐标系。" +
+                             "本程序按经纬度（WGS84/CGCS2000）使用，请自行确认。");
+                return;
+            }
+
+            var isGeographic = srs.IsGeographic() == 1;
+            srs.AutoIdentifyEPSG();
+            var epsg = srs.GetAuthorityCode(null);
+
+            if (!isGeographic)
+            {
+                warnings.Add(
+                    $"{name} 声明的是**投影坐标系**（{srs.GetName()}" +
+                    (string.IsNullOrEmpty(epsg) ? "" : $"，EPSG:{epsg}") + "）。\n" +
+                    "本程序按经纬度使用边界，投影坐标会被当成度来读，" +
+                    "结果会偏到完全错误的位置。请先转成 EPSG:4326。");
+                return;
+            }
+
+            // 地理坐标系但不常见：提示但不阻断——CGCS2000(4490) 与 WGS84(4326)
+            // 在本项目的用途上可以互换（PRD §6 已体检），其他地理坐标系未必。
+            if (epsg is not ("4326" or "4490"))
+            {
+                warnings.Add(
+                    $"{name} 声明的是 {srs.GetName()}" +
+                    (string.IsNullOrEmpty(epsg) ? "" : $"（EPSG:{epsg}）") + "，不是 WGS84/CGCS2000。\n" +
+                    "若两者差异较大，边界位置会有偏差。");
+            }
+        }
+        catch (Exception ex)
+        {
+            warnings.Add($"读不出坐标系声明（{ex.Message}），请自行确认数据是经纬度坐标。");
         }
     }
 
@@ -241,4 +322,12 @@ public sealed class BoundaryStore
             : "";
         return $"共 {_features.Count} 个行政区域（{string.Join(" / ", byLevel)}）{skipped}。";
     }
+}
+
+/// <summary>导入外部边界的结果（FR-14）。</summary>
+/// <param name="Imported">成功导入的要素数。</param>
+/// <param name="Warnings">面向用户的坐标系提示，可直接显示。空表示没有发现问题。</param>
+public sealed record ImportReport(int Imported, IReadOnlyList<string> Warnings)
+{
+    public bool HasWarnings => Warnings.Count > 0;
 }

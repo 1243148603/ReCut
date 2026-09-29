@@ -100,12 +100,20 @@ public sealed class BoundaryPickerForm : Form
 
         try
         {
-            var added = _store.ImportExternal(dialog.FileName);
-            var message = added > 0
-                ? $"导入了 {added} 个要素。\n\n用搜索框可以找到它们（层级树只显示省/市/县）。"
+            var report = _store.ImportExternal(dialog.FileName);
+            var message = report.Imported > 0
+                ? $"导入了 {report.Imported} 个要素。\n\n用搜索框可以找到它们（层级树只显示省/市/县）。"
                 : "这个文件里没有可用的要素。\n\n要素需要有 name 字段；没有 gb 编码的会被当作境界线滤掉。";
+
+            // FR-14 的 CRS 纠偏提示。坐标系不对会让裁剪**静默偏到完全错误的位置**，
+            // 所以这一段比"导入了几个要素"重要，单独成段并改用警告图标。
+            if (report.HasWarnings)
+                message += "\n\n⚠ 坐标系检查：\n" + string.Join("\n\n", report.Warnings);
+
             MessageBox.Show(this, message, "导入边界", MessageBoxButtons.OK,
-                            added > 0 ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+                            report.HasWarnings ? MessageBoxIcon.Warning
+                            : report.Imported > 0 ? MessageBoxIcon.Information
+                            : MessageBoxIcon.Warning);
             BuildTree(_search.Text);
         }
         catch (Exception ex)

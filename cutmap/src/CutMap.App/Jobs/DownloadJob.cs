@@ -56,6 +56,13 @@ public sealed class DownloadJob : Job
             Source, Tiles, SaveDirectory, Pause, progress, onLog, cancellation)
             .GetAwaiter().GetResult();
 
+        // FR-16：逐源记一次成败，便于判断内网镜像还活着没有——
+        // 源管理界面会把失败原因挂在那一行上。
+        new SourceStore().RecordOutcome(
+            Source.Id,
+            outcome.Succeeded,
+            outcome.Succeeded ? null : outcome.Summary);
+
         var summary = outcome.Summary;
         if (!outcome.Succeeded)
             return new JobResult(false, null, summary, SaveDirectory);

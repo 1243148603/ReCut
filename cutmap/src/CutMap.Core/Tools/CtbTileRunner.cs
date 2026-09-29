@@ -59,7 +59,6 @@ public sealed record CtbTileResult(
     TimeSpan Elapsed,
     bool SawError,
     string? ErrorLine,
-    IReadOnlyList<string> Log,
     IReadOnlyList<string> TempFilesLeft)
 {
     public bool Succeeded => !SawError && RawExitCode == 0;
@@ -136,8 +135,8 @@ public static class CtbTileRunner
         psi.Environment["PROJ_DATA"] = home.ProjData;
         psi.Environment["GDAL_DATA"] = home.GdalData;
 
-        var log = new List<string>();
         var sawError = false;
+        var stderrLineCount = 0;
         string? errorLine = null;
         var stderrBuffer = new StringBuilder();
         var lastPercent = -1;
@@ -151,7 +150,7 @@ public static class CtbTileRunner
             {
                 stderrBuffer.AppendLine(e.Data);
                 if (!sawError && ErrorPattern.IsMatch(e.Data)) { sawError = true; errorLine = e.Data; }
-                log.Add("stderr: " + e.Data);
+                stderrLineCount++;
             }
             onLog?.Invoke(e.Data);
         };
@@ -205,11 +204,11 @@ public static class CtbTileRunner
         // 退出码不可信（见类型注释），以 stderr 为准。
         var rawExit = process.ExitCode;
         var effectiveExit = sawError && rawExit == 0 ? -1 : rawExit;
-        if (log.Count == 0 && rawExit != 0 && !sawError)
+        if (stderrLineCount == 0 && rawExit != 0 && !sawError)
             errorLine = $"进程退出码 {rawExit}，无 stderr 输出";
         if (sawError && errorLine is null) errorLine = "(stderr 含 Error: 但未捕获到原文)";
 
-        return new CtbTileResult(rawExit, effectiveExit, started.Elapsed, sawError, errorLine, log, leftovers);
+        return new CtbTileResult(rawExit, effectiveExit, started.Elapsed, sawError, errorLine, leftovers);
     }
 
     /// <summary>

@@ -52,9 +52,9 @@ public sealed class BoundaryPickerForm : Form
         _search.Dock = DockStyle.Fill;
         _search.TextChanged += (_, _) => BuildTree(_search.Text);
         searchRow.Controls.Add(_search, 1, 0);
-        var clear = new Button { Text = "清空", Dock = DockStyle.Fill };
-        clear.Click += (_, _) => _search.Text = "";
-        searchRow.Controls.Add(clear, 2, 0);
+        var import = new Button { Text = "导入…", Dock = DockStyle.Fill };
+        import.Click += (_, _) => ImportExternal();
+        searchRow.Controls.Add(import, 2, 0);
 
         _status.Dock = DockStyle.Bottom;
         _status.Height = 40;
@@ -81,6 +81,38 @@ public sealed class BoundaryPickerForm : Form
         Controls.Add(buttons);
         AcceptButton = _ok;
         CancelButton = cancel;
+    }
+
+    /// <summary>
+    /// 导入外部边界（FR-14："另支持导入外部 geojson/shp 边界"）。
+    ///
+    /// 导入的要素记为「其他」层级，因为外部数据不一定有本程序认得的省/市/县编码。
+    /// 它们能被选中、能参与裁剪，只是不出现在层级树里——搜索能找到。
+    /// </summary>
+    private void ImportExternal()
+    {
+        using var dialog = new OpenFileDialog
+        {
+            Title = "导入外部边界（geojson / shp）",
+            Filter = "GeoJSON (*.geojson;*.json)|*.geojson;*.json|Shapefile (*.shp)|*.shp|所有文件 (*.*)|*.*",
+        };
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+
+        try
+        {
+            var added = _store.ImportExternal(dialog.FileName);
+            var message = added > 0
+                ? $"导入了 {added} 个要素。\n\n用搜索框可以找到它们（层级树只显示省/市/县）。"
+                : "这个文件里没有可用的要素。\n\n要素需要有 name 字段；没有 gb 编码的会被当作境界线滤掉。";
+            MessageBox.Show(this, message, "导入边界", MessageBoxButtons.OK,
+                            added > 0 ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+            BuildTree(_search.Text);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, $"导入失败：{ex.Message}", "导入边界",
+                            MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
     }
 
     /// <summary>

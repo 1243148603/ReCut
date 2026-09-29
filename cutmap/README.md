@@ -171,7 +171,26 @@ CutMap.Cli verify <dir> # 校验已有瓦片集
 
 ---
 
-## 8. 许可
+## 8. 关于早期的 Python 原型
+
+本仓库早期有一个 Python 原型（`recut/`，含 42 个单元测试），用来在做 C# 实现之前
+把基线口径固化下来。**它已被删除**——同一件事有两份实现只会让人分不清哪个是产品。
+
+它验证过的结论现在活在 C# 这边：
+
+| 原型里的东西 | 现在的落点 |
+|---|---|
+| maxzoom 公式 | `Terrain/CtbGrid.ReferenceMaxZoom` + `grid-gate` 闸门 |
+| 逐层瓦片数（223,495） | `Terrain/CtbGrid.CountTilesAt` + `grid-gate` 对基线逐层核 |
+| 半像素口径 | `Geo/RasterInfo` 的类型注释 + `warp-vector` 实测 |
+| ctb-tile 退出码陷阱 | `Tools/CtbTileRunner` + `ctb-gate` **实测复现** |
+| 线程/取消模型 | `App/Ui/EventPump` |
+
+需要旧代码可从 git 历史取：`git show 490c38c:recut/...`。
+
+---
+
+## 9. 许可
 
 见 [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt)。要点：
 

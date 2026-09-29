@@ -23,20 +23,6 @@ public sealed record ClipPreset
     public override string ToString() => Name;
 }
 
-/// <summary>一个切片参数预设（FR-08）。</summary>
-public sealed record SlicePreset
-{
-    [JsonPropertyName("id")] public required string Id { get; init; }
-    [JsonPropertyName("name")] public required string Name { get; init; }
-
-    /// <summary>最深层级。null = 按栅格分辨率自动。</summary>
-    [JsonPropertyName("max_zoom")] public int? MaxZoom { get; init; }
-
-    [JsonIgnore] public bool IsBuiltIn { get; init; }
-
-    public override string ToString() => Name;
-}
-
 /// <summary>
 /// 预设持久化（FR-08）。内置的"重庆全域"来自 204 教程 §4.2，其余由用户增删改。
 /// 与下载源一样，内置项以代码里的定义为准，不写盘。
@@ -44,7 +30,6 @@ public sealed record SlicePreset
 public sealed class PresetStore
 {
     private readonly List<ClipPreset> _clip = [];
-    private readonly List<SlicePreset> _slice = [];
 
     private static readonly JsonSerializerOptions WriteOptions = new()
     {
@@ -62,23 +47,13 @@ public sealed class PresetStore
         IsBuiltIn = true,
     };
 
-    public static SlicePreset FullPyramid { get; } = new()
-    {
-        Id = "full-pyramid",
-        Name = "完整金字塔（自动层级）",
-        MaxZoom = null,
-        IsBuiltIn = true,
-    };
-
     public PresetStore()
     {
         _clip.Add(Chongqing);
-        _slice.Add(FullPyramid);
         Load();
     }
 
     public IReadOnlyList<ClipPreset> ClipPresets => _clip;
-    public IReadOnlyList<SlicePreset> SlicePresets => _slice;
 
     public void SaveClip(ClipPreset preset)
     {
@@ -105,23 +80,6 @@ public sealed class PresetStore
         return true;
     }
 
-    public void SaveSlice(SlicePreset preset)
-    {
-        var index = _slice.FindIndex(p => p.Id == preset.Id);
-        if (index < 0) _slice.Add(preset);
-        else _slice[index] = preset with { IsBuiltIn = _slice[index].IsBuiltIn };
-        Persist();
-    }
-
-    public bool DeleteSlice(string id)
-    {
-        var index = _slice.FindIndex(p => p.Id == id);
-        if (index < 0 || _slice[index].IsBuiltIn) return false;
-        _slice.RemoveAt(index);
-        Persist();
-        return true;
-    }
-
     private void Load()
     {
         try
@@ -132,8 +90,6 @@ public sealed class PresetStore
 
             foreach (var clip in loaded.Clip ?? [])
                 if (!clip.IsBuiltIn && _clip.All(p => p.Id != clip.Id)) _clip.Add(clip);
-            foreach (var slice in loaded.Slice ?? [])
-                if (_slice.All(p => p.Id != slice.Id)) _slice.Add(slice);
         }
         catch (Exception)
         {
@@ -148,7 +104,6 @@ public sealed class PresetStore
             var payload = new Persisted
             {
                 Clip = [.. _clip.Where(p => !p.IsBuiltIn)],
-                Slice = [.. _slice.Where(p => !p.IsBuiltIn)],
             };
             File.WriteAllText(AppPaths.UserPresetsFile,
                               JsonSerializer.Serialize(payload, WriteOptions),
@@ -163,6 +118,5 @@ public sealed class PresetStore
     private sealed record Persisted
     {
         [JsonPropertyName("clip")] public List<ClipPreset>? Clip { get; init; }
-        [JsonPropertyName("slice")] public List<SlicePreset>? Slice { get; init; }
     }
 }

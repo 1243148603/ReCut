@@ -26,7 +26,7 @@ public sealed class HistoryForm : ThemedForm
         _store = store;
         Text = "任务历史";
         StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(940, 520);
+        FormLayout.Resizable(this, new Size(940, 560), new Size(720, 420));
         MinimumSize = new Size(760, 420);
         Font = new Font("Microsoft YaHei UI", 9F);
 
@@ -52,7 +52,7 @@ public sealed class HistoryForm : ThemedForm
         {
             Dock = DockStyle.Right,
             FlowDirection = FlowDirection.TopDown,
-            Width = 108,
+            Width = 126,
             Padding = new Padding(8),
             WrapContents = false,
         };

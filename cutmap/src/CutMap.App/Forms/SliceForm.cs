@@ -39,7 +39,7 @@ public sealed class SliceForm : ThemedForm
         MaximizeBox = false;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(620, 330);
+        FormLayout.FitToContent(this, new Size(620, 330));
         Font = new Font("Microsoft YaHei UI", 9F);
 
         BuildLayout();

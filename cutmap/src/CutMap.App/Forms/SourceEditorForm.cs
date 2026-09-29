@@ -19,7 +19,7 @@ public sealed class SourceEditorForm : ThemedForm
         _store = store;
         Text = "下载源管理";
         StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(720, 400);
+        FormLayout.Resizable(this, new Size(760, 440), new Size(620, 340));
         MinimumSize = new Size(620, 340);
         Font = new Font("Microsoft YaHei UI", 9F);
 
@@ -42,7 +42,7 @@ public sealed class SourceEditorForm : ThemedForm
         {
             Dock = DockStyle.Right,
             FlowDirection = FlowDirection.TopDown,
-            Width = 100,
+            Width = 122,
             Padding = new Padding(8),
             WrapContents = false,
         };
@@ -180,7 +180,7 @@ public sealed class SourceEditForm : ThemedForm
         MaximizeBox = false;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(660, 300);
+        FormLayout.FitToContent(this, new Size(660, 300));
         Font = new Font("Microsoft YaHei UI", 9F);
 
         var layout = new TableLayoutPanel
@@ -232,9 +232,10 @@ public sealed class SourceEditForm : ThemedForm
         _ok.Click += (_, _) => { Result = Build(); DialogResult = DialogResult.OK; Close(); };
         buttons.Controls.Add(cancel);
         buttons.Controls.Add(_ok);
-        Controls.Add(buttons);
-
         Controls.Add(layout);
+        // 填充面板先加、边条后加：WinForms 从后往前停靠，反了会被填充面板抢占整块。
+
+        Controls.Add(buttons);
         AcceptButton = _ok;
         CancelButton = cancel;
         UpdatePreview();

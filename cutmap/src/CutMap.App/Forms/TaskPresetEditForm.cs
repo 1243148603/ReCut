@@ -36,7 +36,7 @@ public sealed class TaskPresetEditForm : ThemedForm
         _original = original;
         Text = original is null ? "新增任务预设" : "编辑任务预设";
         StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(620, 500);
+        FormLayout.FitToContent(this, new Size(660, 540));
         MinimumSize = new Size(560, 460);
         Font = new Font("Microsoft YaHei UI", 9F);
 
@@ -60,8 +60,8 @@ public sealed class TaskPresetEditForm : ThemedForm
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
         // ---- 名称与裁剪范围 ----
-        var clipBox = new GroupBox { Text = "裁剪范围", Dock = DockStyle.Fill, Height = 112 };
-        var clip = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 3, Padding = new Padding(8) };
+        var clipBox = new GroupBox { Text = "裁剪范围", Dock = DockStyle.Fill , AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink};
+        var clip = new TableLayoutPanel { Dock = DockStyle.Top, ColumnCount = 4, RowCount = 3, Padding = new Padding(8), AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink };
         clip.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 72));
         for (var c = 0; c < 3; c++) clip.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33));
 
@@ -72,16 +72,18 @@ public sealed class TaskPresetEditForm : ThemedForm
         clip.SetColumnSpan(_name, 3);
 
         clip.Controls.Add(new Label { Text = "范围：", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 1);
-        for (var i = 0; i < 4; i++)
+        // 先把四个输入框建出来——删掉原来的循环时差点把这一步也删了，
+        // 结果 _bounds 全是 null，窗体一构造就空引用。
+        for (var i = 0; i < _bounds.Length; i++)
         {
-            var cell = new FlowLayoutPanel { AutoSize = true, Margin = new Padding(0, 2, 8, 0) };
-            cell.Controls.Add(new Label { Text = Labels[i], AutoSize = true, Anchor = AnchorStyles.Left });
-            var box = new TextBox { Width = 86 };
-            box.TextChanged += (_, _) => UpdatePreview();
-            _bounds[i] = box;
-            cell.Controls.Add(box);
-            clip.Controls.Add(cell, (i % 3) + 1, 1 + i / 3);
+            _bounds[i] = new TextBox();
+            _bounds[i].TextChanged += (_, _) => UpdatePreview();
         }
+
+        // 四个数值输入用共享的行构造器：每格宽度按内容定，不会挤到截断。
+        var boundsRow = FormLayout.BoundsRow(_bounds, Labels);
+        clip.Controls.Add(boundsRow, 1, 1);
+        clip.SetColumnSpan(boundsRow, 3);
 
         clip.Controls.Add(new Label { Text = "说明：", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 2);
         _description.Dock = DockStyle.Fill;
@@ -91,8 +93,8 @@ public sealed class TaskPresetEditForm : ThemedForm
         root.Controls.Add(clipBox, 0, 0);
 
         // ---- 切片与 layer.json ----
-        var sliceBox = new GroupBox { Text = "切片与 layer.json", Dock = DockStyle.Fill, Height = 130 };
-        var slice = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 4, Padding = new Padding(8) };
+        var sliceBox = new GroupBox { Text = "切片与 layer.json", Dock = DockStyle.Fill , AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink};
+        var slice = new TableLayoutPanel { Dock = DockStyle.Top, ColumnCount = 4, RowCount = 4, Padding = new Padding(8), AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink };
 
         slice.Controls.Add(new Label { Text = "最深层级：", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 0);
         var zoomRow = new FlowLayoutPanel { AutoSize = true, Margin = new Padding(0) };
@@ -142,8 +144,8 @@ public sealed class TaskPresetEditForm : ThemedForm
         root.Controls.Add(sliceBox, 0, 1);
 
         // ---- 导出选项 ----
-        var exportBox = new GroupBox { Text = "导出选项", Dock = DockStyle.Fill, Height = 62 };
-        var export = new FlowLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(8) };
+        var exportBox = new GroupBox { Text = "导出选项", Dock = DockStyle.Fill , AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink};
+        var export = new FlowLayoutPanel { Dock = DockStyle.Top, Padding = new Padding(8) };
         _zipTiles.Text = "前端产物打 zip";
         _zipTiles.AutoSize = true;
         _zipAlgo.Text = "算法产物打 zip";
@@ -171,9 +173,10 @@ public sealed class TaskPresetEditForm : ThemedForm
         _ok.Click += (_, _) => { Result = Build(); DialogResult = DialogResult.OK; Close(); };
         buttons.Controls.Add(cancel);
         buttons.Controls.Add(_ok);
-        Controls.Add(buttons);
-
         Controls.Add(root);
+        // 填充面板先加、边条后加：WinForms 从后往前停靠，反了会被填充面板抢占整块。
+
+        Controls.Add(buttons);
         AcceptButton = _ok;
         CancelButton = cancel;
     }

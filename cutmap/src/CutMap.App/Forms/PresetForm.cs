@@ -25,7 +25,7 @@ public sealed class PresetForm : ThemedForm
         _store = store;
         Text = "预设管理";
         StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(760, 460);
+        FormLayout.Resizable(this, new Size(800, 520), new Size(640, 400));
         MinimumSize = new Size(640, 400);
         Font = new Font("Microsoft YaHei UI", 9F);
 
@@ -77,7 +77,7 @@ public sealed class PresetForm : ThemedForm
         {
             Dock = DockStyle.Right,
             FlowDirection = FlowDirection.TopDown,
-            Width = 100,
+            Width = 122,
             Padding = new Padding(8),
             WrapContents = false,
         };
@@ -109,7 +109,7 @@ public sealed class PresetForm : ThemedForm
         {
             Dock = DockStyle.Right,
             FlowDirection = FlowDirection.TopDown,
-            Width = 100,
+            Width = 122,
             Padding = new Padding(8),
             WrapContents = false,
         };
@@ -262,7 +262,7 @@ public sealed class ClipPresetEditForm : ThemedForm
         MaximizeBox = false;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(520, 240);
+        FormLayout.FitToContent(this, new Size(560, 260));
         Font = new Font("Microsoft YaHei UI", 9F);
 
         var layout = new TableLayoutPanel
@@ -284,16 +284,13 @@ public sealed class ClipPresetEditForm : ThemedForm
         layout.Controls.Add(new Label { Text = "范围：", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 1);
         var source = original?.Box ?? PresetStore.Chongqing.Box;
         var values = new[] { source.West, source.South, source.East, source.North };
-        for (var i = 0; i < 4; i++)
+        // 四个数值输入用共享的行构造器：每格宽度按内容定，不会挤到截断。
+        for (var i = 0; i < _bounds.Length; i++)
         {
-            var cell = new FlowLayoutPanel { AutoSize = true, Margin = new Padding(0, 2, 8, 0) };
-            cell.Controls.Add(new Label { Text = Labels[i], AutoSize = true, Anchor = AnchorStyles.Left });
-            var box = new TextBox { Width = 86, Text = values[i].ToString(CultureInfo.InvariantCulture) };
-            box.TextChanged += (_, _) => UpdatePreview();
-            _bounds[i] = box;
-            cell.Controls.Add(box);
-            layout.Controls.Add(cell, (i % 3) + 1, 1 + i / 3);
+            _bounds[i] = new TextBox();
+            _bounds[i].TextChanged += (_, _) => UpdatePreview();
         }
+        layout.Controls.Add(FormLayout.BoundsRow(_bounds, Labels), 1, 1);
 
         layout.Controls.Add(new Label { Text = "说明：", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 2);
         _description.Dock = DockStyle.Fill;

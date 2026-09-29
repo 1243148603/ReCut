@@ -24,7 +24,7 @@ public sealed class BoundaryPickerForm : ThemedForm
         _store = store;
         Text = "选择行政区划边界";
         StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(680, 560);
+        FormLayout.Resizable(this, new Size(720, 600), new Size(560, 420));
         MinimumSize = new Size(560, 420);
         Font = new Font("Microsoft YaHei UI", 9F);
 

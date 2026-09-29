@@ -61,7 +61,7 @@ public sealed class MosaicForm : ThemedForm
     {
         Text = "新建拼接裁剪任务";
         StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(880, 640);
+        FormLayout.FitToContent(this, new Size(880, 640));
         MinimumSize = new Size(760, 560);
         Font = new Font("Microsoft YaHei UI", 9F);
 
@@ -140,7 +140,17 @@ public sealed class MosaicForm : ThemedForm
         _inputs.Columns.Add("像元(角秒)", 80);
         _inputs.Columns.Add("范围（像素中心口径）", 380);
 
-        var inputButtons = new FlowLayoutPanel { Dock = DockStyle.Right, AutoSize = true };
+        // Dock=Right 配 AutoSize 时宽度算不出来（实测报 102、实际需要 266），
+        // 于是压在旁边的列表上。改放列表下方右对齐——按钮条本来也不需要占一列。
+        var inputButtons = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Bottom,
+            FlowDirection = FlowDirection.RightToLeft,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            WrapContents = false,
+            Padding = new Padding(0, 4, 0, 0),
+        };
         var add = new Button { Text = "添加 DEM…", Width = 96 };
         add.Click += (_, _) => AddInputs();
         var remove = new Button { Text = "移除选中", Width = 88 };
@@ -154,8 +164,9 @@ public sealed class MosaicForm : ThemedForm
         var inputPanel = new Panel { Dock = DockStyle.Fill };
         inputPanel.Controls.Add(_inputs);
         inputPanel.Controls.Add(inputButtons);
+        inputButtons.BringToFront();
 
-        var inputBox = new GroupBox { Text = "输入 DEM（可多选，多幅先拼接再裁剪）", Dock = DockStyle.Fill };
+        var inputBox = new GroupBox { Text = "输入 DEM（可多选，多幅先拼接再裁剪）", Dock = DockStyle.Fill , AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink};
         inputBox.Controls.Add(inputPanel);
         root.Controls.Add(inputBox, 0, 0);
 
@@ -166,8 +177,8 @@ public sealed class MosaicForm : ThemedForm
         root.Controls.Add(_inputSummary, 0, 1);
 
         // ---- 裁剪范围 ----
-        var rangeBox = new GroupBox { Text = "裁剪范围（WGS84 经纬度）", Dock = DockStyle.Fill, Height = 96 };
-        var range = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 7, RowCount = 2, Padding = new Padding(8) };
+        var rangeBox = new GroupBox { Text = "裁剪范围（WGS84 经纬度）", Dock = DockStyle.Fill , AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink};
+        var range = new TableLayoutPanel { Dock = DockStyle.Top, ColumnCount = 7, RowCount = 2, Padding = new Padding(8), AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink };
 
         range.Controls.Add(new Label { Text = "预设：", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 0);
         _preset.DropDownStyle = ComboBoxStyle.DropDownList;
@@ -212,13 +223,12 @@ public sealed class MosaicForm : ThemedForm
 
         for (var c = 0; c < 7; c++) range.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         range.RowCount = 3;
-        rangeBox.Height = 128;
         rangeBox.Controls.Add(range);
         root.Controls.Add(rangeBox, 0, 2);
 
         // ---- 输出与选项 ----
-        var outputBox = new GroupBox { Text = "输出", Dock = DockStyle.Fill, Height = 132 };
-        var output = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 3, Padding = new Padding(8) };
+        var outputBox = new GroupBox { Text = "输出", Dock = DockStyle.Fill , AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink};
+        var output = new TableLayoutPanel { Dock = DockStyle.Top, ColumnCount = 4, RowCount = 3, Padding = new Padding(8), AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink };
 
         output.Controls.Add(new Label { Text = "输出文件：", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 0);
         _output.Dock = DockStyle.Fill;
@@ -265,9 +275,10 @@ public sealed class MosaicForm : ThemedForm
         _ok.Click += (_, _) => { DialogResult = DialogResult.OK; Close(); };
         buttons.Controls.Add(cancel);
         buttons.Controls.Add(_ok);
-        Controls.Add(buttons);
-
         Controls.Add(root);
+        // 填充面板先加、边条后加：WinForms 从后往前停靠，反了会被填充面板抢占整块。
+
+        Controls.Add(buttons);
         AcceptButton = _ok;
         CancelButton = cancel;
     }

@@ -35,7 +35,7 @@ public sealed class TaskChooserForm : ThemedForm
         MaximizeBox = false;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(600, 280);
+        FormLayout.FitToContent(this, new Size(600, 280));
         Font = new Font("Microsoft YaHei UI", 9F);
 
         var layout = new TableLayoutPanel
@@ -133,7 +133,7 @@ public sealed class TaskChooserForm : ThemedForm
 
     private Button MakeButton(string text, TaskKind kind)
     {
-        var button = new Button { Text = text, Dock = DockStyle.Fill, Height = 56 };
+        var button = new Button { Text = text, Dock = DockStyle.Fill };
         button.Click += (_, _) => Finish(kind);
         return button;
     }

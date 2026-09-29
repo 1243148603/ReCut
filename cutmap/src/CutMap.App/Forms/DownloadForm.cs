@@ -49,7 +49,7 @@ public sealed class DownloadForm : ThemedForm
     {
         Text = "下载 DEM 数据";
         StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(760, 400);
+        FormLayout.FitToContent(this, new Size(760, 400));
         MinimumSize = new Size(680, 380);
         Font = new Font("Microsoft YaHei UI", 9F);
 
@@ -87,7 +87,7 @@ public sealed class DownloadForm : ThemedForm
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
         // ---- 下载源 ----
-        var sourceRow = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 2, AutoSize = true };
+        var sourceRow = new TableLayoutPanel { Dock = DockStyle.Top, ColumnCount = 4, RowCount = 2, AutoSize = true };
         sourceRow.Controls.Add(new Label { Text = "下载源：", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 0);
         _source.DropDownStyle = ComboBoxStyle.DropDownList;
         _source.Width = 340;
@@ -104,8 +104,8 @@ public sealed class DownloadForm : ThemedForm
         root.Controls.Add(sourceRow, 0, 0);
 
         // ---- 区域 ----
-        var areaBox = new GroupBox { Text = "区域（WGS84 经纬度，按 1°×1° 网格推导分幅）", Dock = DockStyle.Fill, Height = 92 };
-        var areaRow = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 9, RowCount = 2, Padding = new Padding(8) };
+        var areaBox = new GroupBox { Text = "区域（WGS84 经纬度，按 1°×1° 网格推导分幅）", Dock = DockStyle.Fill , AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink};
+        var areaRow = new TableLayoutPanel { Dock = DockStyle.Top, ColumnCount = 9, RowCount = 2, Padding = new Padding(8), AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink };
 
         areaRow.Controls.Add(new Label { Text = "预设：", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 0);
         var preset = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 140 };
@@ -147,12 +147,11 @@ public sealed class DownloadForm : ThemedForm
         areaRow.Controls.Add(_preview, 0, 1);
         areaRow.SetColumnSpan(_preview, 10);
         areaRow.RowCount = 3;
-        areaBox.Height = 132;
         areaBox.Controls.Add(areaRow);
         root.Controls.Add(areaBox, 1, 0);
 
         // ---- 保存目录 ----
-        var saveRow = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 2, AutoSize = true };
+        var saveRow = new TableLayoutPanel { Dock = DockStyle.Top, ColumnCount = 3, RowCount = 2, AutoSize = true };
         saveRow.Controls.Add(new Label { Text = "保存到：", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 0);
         _saveDir.Dock = DockStyle.Fill;
         saveRow.Controls.Add(_saveDir, 1, 0);
@@ -185,9 +184,10 @@ public sealed class DownloadForm : ThemedForm
         _ok.Click += (_, _) => { DialogResult = DialogResult.OK; Close(); };
         buttons.Controls.Add(cancel);
         buttons.Controls.Add(_ok);
-        Controls.Add(buttons);
-
         Controls.Add(root);
+        // 填充面板先加、边条后加：WinForms 从后往前停靠，反了会被填充面板抢占整块。
+
+        Controls.Add(buttons);
         AcceptButton = _ok;
         CancelButton = cancel;
     }

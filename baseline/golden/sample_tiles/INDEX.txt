@@ -1,7 +1,0 @@
-sample_tiles/0/1/0.terrain
-sample_tiles/14/25968/10749.terrain
-sample_tiles/14/25968/10750.terrain
-sample_tiles/14/25968/10751.terrain
-sample_tiles/14/25968/10752.terrain
-sample_tiles/14/25968/10753.terrain
-sample_tiles/14/25968/10754.terrain

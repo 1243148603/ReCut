@@ -1,2 +1,0 @@
-chongqing_dem            Checksum=58775
-chongqing_dem_vrt        Checksum=31298

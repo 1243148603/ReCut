@@ -80,6 +80,9 @@ public sealed class PresetForm : ThemedForm
             Width = 122,
             Padding = new Padding(8),
             WrapContents = false,
+            // 容器矮于内容时滚动，而不是把按钮挤出去。
+            // 侧栏的实际高度取决于页签容器，用滚动兜底比继续猜尺寸可靠。
+            AutoScroll = true,
         };
         side.Controls.Add(MakeButton("新增…", AddClip));
         side.Controls.Add(MakeButton("编辑…", EditClip));
@@ -112,6 +115,9 @@ public sealed class PresetForm : ThemedForm
             Width = 122,
             Padding = new Padding(8),
             WrapContents = false,
+            // 容器矮于内容时滚动，而不是把按钮挤出去。
+            // 侧栏的实际高度取决于页签容器，用滚动兜底比继续猜尺寸可靠。
+            AutoScroll = true,
         };
         side.Controls.Add(MakeButton("新增…", AddTask));
         side.Controls.Add(MakeButton("编辑…", EditTask));
@@ -262,7 +268,7 @@ public sealed class ClipPresetEditForm : ThemedForm
         MaximizeBox = false;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterParent;
-        FormLayout.FitToContent(this, new Size(560, 260));
+        FormLayout.FitToContent(this, new Size(580, 280));
         Font = new Font("Microsoft YaHei UI", 9F);
 
         var layout = new TableLayoutPanel

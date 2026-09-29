@@ -136,7 +136,7 @@ public sealed class BoundaryStore
                 continue;
             }
 
-            var envelope = new Envelope();
+            using var envelope = new Envelope();
             geometry.GetEnvelope(envelope);
 
             // 坐标明显不在经纬度范围内，多半是投影坐标（米）而非度。

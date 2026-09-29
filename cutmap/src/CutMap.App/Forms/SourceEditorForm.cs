@@ -45,6 +45,9 @@ public sealed class SourceEditorForm : ThemedForm
             Width = 122,
             Padding = new Padding(8),
             WrapContents = false,
+            // 容器矮于内容时滚动，而不是把按钮挤出去。
+            // 侧栏的实际高度取决于页签容器，用滚动兜底比继续猜尺寸可靠。
+            AutoScroll = true,
         };
         side.Controls.Add(MakeButton("新增…", Add));
         side.Controls.Add(MakeButton("编辑…", Edit));

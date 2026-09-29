@@ -161,10 +161,14 @@ public sealed class MosaicForm : ThemedForm
         inputButtons.Controls.Add(remove);
         inputButtons.Controls.Add(clear);
 
-        var inputPanel = new Panel { Dock = DockStyle.Fill };
+        // 固定高度：输入列表需要一个稳定的可视区域。用 Dock=Fill 的话，
+        // 在 AutoSize 的分组框里高度会被算成 0，下面的按钮条就压在列表上。
+        var inputPanel = new Panel { Dock = DockStyle.Top, Height = 220 };
+        // 顺序不能动：填充的先加、边条的后加（WinForms 从后往前停靠）。
+        // 曾经在这里加过 inputButtons.BringToFront()——它把按钮条挪到 z 序最前，
+        // 停靠顺序就反了，列表抢占整块、按钮压在上面。
         inputPanel.Controls.Add(_inputs);
         inputPanel.Controls.Add(inputButtons);
-        inputButtons.BringToFront();
 
         var inputBox = new GroupBox { Text = "输入 DEM（可多选，多幅先拼接再裁剪）", Dock = DockStyle.Fill , AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink};
         inputBox.Controls.Add(inputPanel);

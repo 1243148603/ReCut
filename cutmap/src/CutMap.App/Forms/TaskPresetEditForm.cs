@@ -36,7 +36,7 @@ public sealed class TaskPresetEditForm : ThemedForm
         _original = original;
         Text = original is null ? "新增任务预设" : "编辑任务预设";
         StartPosition = FormStartPosition.CenterParent;
-        FormLayout.FitToContent(this, new Size(660, 540));
+        FormLayout.FitToContent(this, new Size(680, 580));
         MinimumSize = new Size(560, 460);
         Font = new Font("Microsoft YaHei UI", 9F);
 
@@ -54,10 +54,9 @@ public sealed class TaskPresetEditForm : ThemedForm
             ColumnCount = 1,
             RowCount = 4,
         };
-        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        // 四行都按内容。曾经把"导出选项"那行设成 Percent(100) 想让它吸收多余空间，
+        // 结果是它只分到 47 像素、内容溢出——多余的空间该由窗口自己留白，不该塞给某一行。
+        for (var r = 0; r < 4; r++) root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
         // ---- 名称与裁剪范围 ----
         var clipBox = new GroupBox { Text = "裁剪范围", Dock = DockStyle.Fill , AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink};
@@ -145,7 +144,7 @@ public sealed class TaskPresetEditForm : ThemedForm
 
         // ---- 导出选项 ----
         var exportBox = new GroupBox { Text = "导出选项", Dock = DockStyle.Fill , AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink};
-        var export = new FlowLayoutPanel { Dock = DockStyle.Top, Padding = new Padding(8) };
+        var export = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Padding = new Padding(8) };
         _zipTiles.Text = "前端产物打 zip";
         _zipTiles.AutoSize = true;
         _zipAlgo.Text = "算法产物打 zip";

@@ -11,7 +11,7 @@ namespace CutMap.Core.Download;
 /// <see cref="WaitIfPaused"/> 必须接受取消令牌：**暂停中的任务被取消要立即退出**，
 /// 不允许因为死等恢复信号而把工作线程卡住（这条是 PRD 的硬要求）。
 /// </summary>
-public sealed class PauseToken
+public sealed class PauseToken : IDisposable
 {
     private readonly ManualResetEventSlim _resume = new(initialState: true);
 
@@ -24,5 +24,12 @@ public sealed class PauseToken
     public void WaitIfPaused(CancellationToken cancellation) =>
         _resume.Wait(cancellation);
 
-    public void Dispose() => _resume.Dispose();
+    private bool _disposed;
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        _resume.Dispose();
+    }
 }

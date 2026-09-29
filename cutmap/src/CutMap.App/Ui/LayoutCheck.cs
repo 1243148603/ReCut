@@ -76,7 +76,9 @@ internal static class LayoutCheck
 
             // 超出父容器：就是"内容被裁掉"。
             // Dock=Fill / Top / Bottom 的控件贴着边是正常的，所以留 1 像素余量。
-            if (parent != root &&
+            // 父容器开了 AutoScroll 时，子控件超出可视区是**设计如此**（滚动查看），
+            // 不是排版错误。不排除它的话，侧栏按钮这类会一直误报。
+            if (parent != root && parent is not ScrollableControl { AutoScroll: true } &&
                 (child.Right > parent.ClientSize.Width + 1 ||
                  child.Bottom > parent.ClientSize.Height + 1))
             {

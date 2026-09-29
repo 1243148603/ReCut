@@ -41,7 +41,8 @@ internal static class Program
 
         // 只调一次。曾经这里并排写了两行 Application.Run——关掉主窗口之后
         // 会再开一个，看起来像"关不掉"。
-        Application.Run(new MainForm(home));
+        using var main = new MainForm(home);
+        Application.Run(main);
 
         static void Fail(string reason) => MessageBox.Show(
             $"找不到 CTB 工具包，无法启动。\n\n{reason}\n\n请确认 ctb 目录与程序放在一起。",
@@ -91,7 +92,8 @@ internal static class Program
 
         // 先验证检查器本身有效：拿一个**故意做坏**的窗体试它。
         // 一个从不报警的检查等于没有检查。
-        var canary = LayoutCheck.Inspect("（自检用的坏窗体）", BuildBrokenForm());
+        using var broken = BuildBrokenForm();
+        var canary = LayoutCheck.Inspect("（自检用的坏窗体）", broken);
         if (canary.Count < 2)
         {
             Console.WriteLine($"!! 布局检查器失效：故意做坏的窗体只报了 {canary.Count} 处问题");
@@ -112,6 +114,9 @@ internal static class Program
     /// 故意做坏的窗体，用来验证 <see cref="LayoutCheck"/> 真的会报警。
     /// 三处问题分别对应它要抓的三类：尺寸为零、文字截断、超出父容器。
     /// </summary>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Reliability", "CA2000:Dispose objects before losing scope",
+        Justification = "控件挂到 form 之后由 form 负责释放，这里不需要单独 Dispose。")]
     private static Form BuildBrokenForm()
     {
         var form = new Form { Size = new Size(300, 200) };

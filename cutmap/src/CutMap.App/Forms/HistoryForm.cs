@@ -55,6 +55,7 @@ public sealed class HistoryForm : ThemedForm
             Width = 126,
             Padding = new Padding(8),
             WrapContents = false,
+            AutoScroll = true,
         };
         _rerun.Text = "重跑…";
         _rerun.Width = 92;

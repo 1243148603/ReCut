@@ -40,7 +40,8 @@ internal static class BoundaryCommand
         var county = store.All.FirstOrDefault(f => f.Level == BoundaryLevel.县);
         ok &= Check("按名称搜到区县", store.Search("巴南").Count.ToString(), "1");
         ok &= Check("按代码搜到区县", store.Search("500113").Count.ToString(), "1");
-        ok &= Check("区县的上级是市级", county?.ParentCode ?? "(无)", "156500100");
+        ok &= Check("区县的上级是市级",
+                    county?.Code is { } cc ? store.ParentOf(cc) ?? "(无)" : "(无)", "156500100");
         ok &= Check("省级下有 1 个市", store.ChildrenOf("156500000").Count.ToString(), "1");
         ok &= Check("市级下有 1 个县", store.ChildrenOf("156500100").Count.ToString(), "1");
         ok &= Check("省级的全体后代是 2 个（市+县）",
@@ -97,6 +98,79 @@ internal static class BoundaryCommand
         ok &= Check("含 sublimit 下级界线", text.Contains("\"sublimit\"", StringComparison.Ordinal));
         ok &= Check("含 label 中心点", text.Contains("\"label\"", StringComparison.Ordinal));
         ok &= Check("含数据来源注明", text.Contains("合成数据", StringComparison.Ordinal));
+
+        // ---------- 五、真实数据（DataV GeoAtlas，全国省/市/县）----------
+        Console.WriteLine();
+        Console.WriteLine("五、真实边界数据");
+        var realResources = Path.Combine(repoRoot, "resources");
+        var real = BoundaryStore.Load(realResources);
+        if (real.IsEmpty)
+        {
+            Console.WriteLine("  （resources 下没有边界数据，跳过）");
+        }
+        else
+        {
+            Console.WriteLine("  " + real.Describe());
+
+            var provinces = real.All.Count(f => f.Level == BoundaryLevel.省);
+            var cities = real.All.Count(f => f.Level == BoundaryLevel.市);
+            var counties = real.All.Count(f => f.Level == BoundaryLevel.县);
+            Console.WriteLine($"  省 {provinces} / 市 {cities} / 县 {counties}");
+            ok &= Check("省级数量在合理范围", provinces is > 30 and < 50);
+            ok &= Check("市级数量在合理范围", cities is > 300 and < 450);
+            ok &= Check("县级数量在合理范围", counties is > 2500 and < 3200);
+
+            // PRD §6 点名要有的：重庆 38 个区县齐全，且巴南区的代码是 156500113。
+            var chongqing = real.ByCode("156500000");
+            ok &= Check("找得到重庆市", chongqing?.Name ?? "(无)", "重庆市");
+            var districts = chongqing is null ? [] : real.ChildrenOf(chongqing.Code!);
+            Console.WriteLine($"  重庆市下直接下级 {districts.Count} 个");
+            ok &= Check("重庆下级数量在合理范围", districts.Count is >= 30 and <= 45);
+
+            var banan = real.ByCode("156500113");
+            ok &= Check("找得到巴南区", banan?.Name ?? "(无)", "巴南区");
+            ok &= Check("巴南区归重庆市（直辖市无「市辖区」层，靠实际节点解析）",
+                        banan?.Code is { } bc ? real.ParentOf(bc) ?? "(无)" : "(无)", "156500000");
+
+            // 用真实边界裁一块真实 DEM：找一个覆盖测试栅格范围的区县。
+            var testRaster = RasterInfo.Read(dem);
+            var centreLon = (testRaster.Extent.West + testRaster.Extent.East) / 2;
+            var centreLat = (testRaster.Extent.South + testRaster.Extent.North) / 2;
+            var host = real.All
+                .Where(f => f.Level == BoundaryLevel.县)
+                .FirstOrDefault(f => f.Bounds.West <= centreLon && f.Bounds.East >= centreLon &&
+                                     f.Bounds.South <= centreLat && f.Bounds.North >= centreLat);
+
+            if (host is null)
+            {
+                Console.WriteLine($"  （{centreLon:F3}E {centreLat:F3}N 不在任何区县范围内，跳过真实裁剪）");
+            }
+            else
+            {
+                Console.WriteLine($"  测试点 {centreLon:F3}E {centreLat:F3}N 落在：{host.Display}");
+                var realCutline = Path.Combine(workDir, "real_cutline.geojson");
+                BoundaryExport.WriteCutline([host], realCutline);
+                var realClipped = Path.Combine(workDir, "real_clipped.tif");
+                Mosaic.RunVector([dem], realClipped, realCutline);
+
+                var clippedInfo = RasterInfo.Read(realClipped);
+                Console.WriteLine($"  真实边界裁剪产物：{clippedInfo.Width}×{clippedInfo.Height}，" +
+                                  $"范围 {clippedInfo.Extent}");
+                ok &= Check("产物有有效像素", clippedInfo.Width > 0 && clippedInfo.Height > 0);
+                ok &= Check("裙边已补齐（nodata 标记已清）", clippedInfo.NoData is null);
+
+                // 边界矢量随产物分发，用真实数据 + 真实下级
+                var realBoundary = Path.Combine(workDir, "real_boundary.geojson");
+                BoundaryExport.WriteProductBoundary(
+                    [host], real, realBoundary, "chongqing-test",
+                    sourceNotes: [BoundaryStore.SourceAttribution]);
+                var realText = File.ReadAllText(realBoundary);
+                ok &= Check("真实产物含 outline", realText.Contains("\"outline\"", StringComparison.Ordinal));
+                ok &= Check("真实产物含 label", realText.Contains("\"label\"", StringComparison.Ordinal));
+                ok &= Check("真实产物含来源注明",
+                            realText.Contains("DataV", StringComparison.Ordinal));
+            }
+        }
 
         Console.WriteLine();
         Console.WriteLine(ok ? "PASS  M5：边界加载、过滤、矢量裁剪、随产物分发" : "FAIL  M5");

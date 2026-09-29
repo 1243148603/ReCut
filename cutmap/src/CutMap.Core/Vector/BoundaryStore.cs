@@ -22,8 +22,22 @@ public sealed class BoundaryStore
         ("中国_县.geojson", BoundaryLevel.县),
     ];
 
+    /// <summary>
+    /// 随产物分发时必须带上的数据来源声明（NFR-07 / PRD §6）。
+    ///
+    /// **实际用的是 DataV.GeoAtlas，不是 PRD §6 写的天地图。** 天地图的行政区划
+    /// 服务需要申请 tk 密钥，无法在无人值守脚本里取；DataV 的公开接口免密、
+    /// 字段与几何类型兼容。来源不同，署名要求也不同——照抄 PRD 里的天地图
+    /// 会是**错误的署名**。改数据源时改这一处，代码与文档就不会各说各话。
+    /// </summary>
+    public const string SourceAttribution =
+        "行政区划数据来源：DataV.GeoAtlas（阿里云 DataV，https://datav.aliyun.com/portal/school/atlas/area_selector）";
+
     private readonly List<BoundaryFeature> _features = [];
     private readonly List<string> _missing = [];
+
+    /// <summary>code → 实际存在的上级 code。载入后由 ResolveHierarchy 建好。</summary>
+    private readonly Dictionary<string, string?> _parentOf = new(StringComparer.Ordinal);
 
     public IReadOnlyList<BoundaryFeature> All => _features;
 
@@ -48,6 +62,7 @@ public sealed class BoundaryStore
             }
             store.LoadFile(path, level);
         }
+        store.ResolveHierarchy();
         return store;
     }
 
@@ -140,9 +155,44 @@ public sealed class BoundaryStore
         return [.. query.Take(limit)];
     }
 
+    /// <summary>
+    /// 解析每个区域的**实际**上级。
+    ///
+    /// 不能只用编码算术：直辖市没有"市辖区"那一层，区县的算术上级
+    /// （如巴南区的 156500100）在数据里不存在。所以按候选往上找，找到第一个
+    /// 真实存在的节点为止——这样直辖市、省直辖县这类不规则情形都自然落位，
+    /// 不需要逐种情况打补丁。
+    /// </summary>
+    private void ResolveHierarchy()
+    {
+        var byCode = new Dictionary<string, BoundaryFeature>(StringComparer.Ordinal);
+        foreach (var feature in _features)
+            if (feature.Code is { } code) byCode[code] = feature;
+
+        foreach (var feature in _features)
+        {
+            if (feature.Code is not { } code) continue;
+
+            var parent = feature.CandidateParentCode;
+            while (parent is not null && !byCode.ContainsKey(parent))
+            {
+                // 候选不存在就往再上一级找：县 → 市 → 省。仍然没有就是顶级。
+                parent = parent.EndsWith("0000", StringComparison.Ordinal)
+                    ? null                                   // 已经是省级，到头了
+                    : parent[..5] + "0000";
+            }
+
+            _parentOf[code] = parent;
+        }
+    }
+
+    /// <summary>某个区域的实际上级代码；顶级区域返回 null。</summary>
+    public string? ParentOf(string code) => _parentOf.GetValueOrDefault(code);
+
     /// <summary>某个代码下的直接下级。</summary>
     public IReadOnlyList<BoundaryFeature> ChildrenOf(string? parentCode) =>
-        [.. _features.Where(f => f.ParentCode == parentCode)];
+        [.. _features.Where(f => f.Code is { } c &&
+                                 _parentOf.GetValueOrDefault(c) == parentCode)];
 
     /// <summary>
     /// 某个区域下的全部后代（子、孙……）。

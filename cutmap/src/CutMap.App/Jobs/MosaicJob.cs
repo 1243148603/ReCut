@@ -101,7 +101,7 @@ public sealed class MosaicJob : Job
             BoundaryExport.WriteProductBoundary(
                 exported, store: null, productBoundary,
                 Path.GetFileNameWithoutExtension(OutputPath),
-                sourceNotes: ["行政区划数据来源：天地图（国家地理信息公共服务平台）"]);
+                sourceNotes: [BoundaryStore.SourceAttribution]);
             onLog($"边界矢量：{productBoundary}");
         }
 

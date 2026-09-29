@@ -30,17 +30,22 @@ public sealed record BoundaryFeature(
     public bool IsAdministrative => !string.IsNullOrWhiteSpace(Code);
 
     /// <summary>
-    /// 上级代码。
+    /// 按编码算术推出的**候选**上级，不保证这个节点真的存在。
     ///
     /// gb 是 **9 位 = 3 位国家码 + 6 位区划码**（156 | 500113），省/市/县三级
-    /// 长度**完全一样**，所以不能靠长度判断层级，只能用 <see cref="Level"/>
-    /// （也就是这条要素来自省/市/县哪个文件）：
+    /// 长度**完全一样**，所以不能靠长度判断层级，只能用 <see cref="Level"/>：
     ///
-    ///   巴南区 156|500113 → 上级 156|5001|00 = 156500100（市辖区）
-    ///   市辖区 156|500100 → 上级 156|50|0000 = 156500000（重庆市）
-    ///   重庆市 156|500000 → 无上级
+    ///   巴南区 156|500113 → 156|5001|00 = 156500100
+    ///   泸州市 156|510500 → 156|51|0000 = 156510000（四川省）
+    ///   四川省 156|510000 → 无
+    ///
+    /// **但候选不等于实际**。直辖市（北京/天津/上海/重庆）在数据里没有"市辖区"
+    /// 那一层，区县直接挂在市下面：巴南区的候选上级 156500100 根本不存在，
+    /// 真实的上级是 156500000（重庆市）。所以真正的父子关系由
+    /// <see cref="BoundaryStore"/> 在载入后按实际存在的节点解析，见
+    /// <c>BoundaryStore.ParentOf</c>。
     /// </summary>
-    public string? ParentCode => (Level, Code) switch
+    public string? CandidateParentCode => (Level, Code) switch
     {
         (BoundaryLevel.市, { Length: >= 5 } c) => c[..5] + "0000",
         (BoundaryLevel.县, { Length: >= 7 } c) => c[..7] + "00",

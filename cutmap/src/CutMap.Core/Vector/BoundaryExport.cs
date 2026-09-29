@@ -30,8 +30,60 @@ public static class BoundaryExport
             ? features[0].GeometryJson
             : BuildGeometryCollection(features);
 
+        // 真实行政边界经常自相交（简化/合并过的数据尤其如此），GDAL 会直接拒绝：
+        //   ERROR 1: Cutline polygon is invalid: Ring Self-intersection at ...
+        // 合成数据是标准矩形所以碰不到这个,只有真数据才能暴露。这里先修一遍。
+        geometryJson = MakeValid(geometryJson, features[0].Name);
+
         WriteGeoJson(path, geometryJson, crsName: "urn:ogc:def:crs:OGC:1.3:CRS84");
         return path;
+    }
+
+    /// <summary>
+    /// 几何自相交等拓扑问题会让 GDAL 拒绝使用，先做一次 MakeValid。
+    ///
+    /// MakeValid 需要 GEOS——GDAL 的 NuGet 包里带了 geos_c.dll，所以可用。
+    /// 修完如果拿不到多边形（退化输入可能返回空几何或只剩线），就退回原几何：
+    /// 交给 GDAL 去报错，比在这里静默换一个形状更安全——**裁剪范围不能悄悄变**。
+    /// </summary>
+    private static string MakeValid(string geometryJson, string label)
+    {
+        try
+        {
+            using var geometry = Ogr.CreateGeometryFromJson(geometryJson);
+            if (geometry is null) return geometryJson;
+            if (geometry.IsValid()) return geometryJson;
+
+            using var repaired = geometry.MakeValid([]);
+            if (repaired is null || repaired.IsEmpty())
+            {
+                Console.Error.WriteLine(
+                    $"警告：{label} 的边界几何无效且修不好，将原样交给 GDAL（可能报错）。");
+                return geometryJson;
+            }
+
+            // MakeValid 对退化输入会把修不好的部分降级成线或点，返回一个
+            // GeometryCollection。而 cutline **必须是多边形**，否则 GDAL 报
+            // "Cutline not of polygon type"。所以把多边形部分挑出来重组成 MultiPolygon。
+            using var polygons = CollectPolygons(repaired);
+            if (polygons is null || polygons.IsEmpty())
+            {
+                Console.Error.WriteLine(
+                    $"警告：{label} 的边界修复后不含任何多边形，将原样交给 GDAL（可能报错）。");
+                return geometryJson;
+            }
+
+            var repairedJson = polygons.ExportToJson([]);
+            if (string.IsNullOrEmpty(repairedJson)) return geometryJson;
+            Console.Error.WriteLine($"提示：{label} 的边界几何自相交，已做拓扑修复。");
+            return repairedJson;
+        }
+        catch (Exception ex)
+        {
+            // MakeValid 不可用（没编 GEOS）或几何本身有问题：原样返回，让 GDAL 报它自己的错。
+            Console.Error.WriteLine($"警告：{label} 的几何修复失败（{ex.Message}），原样交给 GDAL。");
+            return geometryJson;
+        }
     }
 
     /// <summary>
@@ -118,6 +170,47 @@ public static class BoundaryExport
     }
 
     // ---------------------------------------------------------------- 几何
+
+    /// <summary>
+    /// 从一个几何里挑出所有多边形，合成一个 MultiPolygon。没有多边形则返回 null。
+    ///
+    /// MakeValid 的结果可能是 GeometryCollection（多边形 + 线 + 点的混合），
+    /// 而 cutline 只接受多边形。这里递归收集，丢掉非面部分——被丢掉的是
+    /// 修复过程中判定为"退化"的碎片，对裁剪范围没有贡献。
+    /// </summary>
+    private static Geometry? CollectPolygons(Geometry geometry)
+    {
+        var type = geometry.GetGeometryType();
+        if (type is wkbGeometryType.wkbPolygon or wkbGeometryType.wkbMultiPolygon)
+            return geometry.Clone();
+        if (type is not (wkbGeometryType.wkbGeometryCollection
+                         or wkbGeometryType.wkbMultiSurface
+                         or wkbGeometryType.wkbCurvePolygon))
+            return null;
+
+        var result = new Geometry(wkbGeometryType.wkbMultiPolygon);
+        for (var i = 0; i < geometry.GetGeometryCount(); i++)
+        {
+            using var child = geometry.GetGeometryRef(i);
+            if (child is null) continue;
+            using var polygons = CollectPolygons(child);
+            if (polygons is null) continue;
+
+            if (polygons.GetGeometryType() == wkbGeometryType.wkbPolygon)
+            {
+                result.AddGeometry(polygons);
+            }
+            else
+            {
+                for (var j = 0; j < polygons.GetGeometryCount(); j++)
+                {
+                    using var part = polygons.GetGeometryRef(j);
+                    if (part is not null) result.AddGeometry(part);
+                }
+            }
+        }
+        return result.GetGeometryCount() == 0 ? null : result;
+    }
 
     /// <summary>
     /// 用 OGR 的 SQLite 方言做 ST_Union（合并成一个外轮廓）。

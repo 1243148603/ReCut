@@ -45,6 +45,12 @@ internal static class Program
                 return VerifyCommand.Run(tiles, dem);
             }
 
+            case "warp-vector":
+                return VectorWarpCommand.Run(
+                    @"D:\Map",
+                    args.Length > 1 ? args[1] : "156500000",
+                    args.Length > 2 ? args[2] : null);
+
             case "boundary":
                 return BoundaryCommand.Run(@"D:\Map");
 
@@ -98,6 +104,7 @@ internal static class Program
                                    M3: layer.json, dual artifacts, zip
               download [--network] M4: tile enumeration and URL templates
               boundary             M5: boundaries, vector clip, export
+              warp-vector <code>   M5: clip real DEMs by a real boundary
               verify [tiles] [dem] M6: is this tile set loadable by Cesium?
             """);
         return 2;

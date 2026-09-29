@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Threading.Channels;
 using CutMap.Core.Terrain;
 
 namespace CutMap.Core.Packaging;
@@ -16,7 +17,9 @@ public sealed record PackageRequest(
     bool ZipTiles = false,
     bool ZipAlgo = false,
     /// <summary>前端产物的 layer.json。null 时从瓦片目录反推（FR-03 的独立打包）。</summary>
-    LayerJson? Layer = null);
+    LayerJson? Layer = null,
+    /// <summary>调用方刚扫过的瓦片统计。给了就不重复遍历目录（22 万瓦片一次扫描约数秒）。</summary>
+    TileCoverage? Coverage = null);
 
 public sealed record PackageResult(
     string? LayerJsonPath,
@@ -53,7 +56,7 @@ public static class Packager
             if (!Directory.Exists(tilesDir))
                 throw new DirectoryNotFoundException($"瓦片目录不存在：{tilesDir}");
 
-            var coverage = LayerJson.InspectTiles(tilesDir)
+            var coverage = request.Coverage ?? LayerJson.InspectTiles(tilesDir)
                 ?? throw new InvalidOperationException($"目录里没有 .terrain 瓦片：{tilesDir}");
             tileCount = coverage.TileCount;
             onLog?.Invoke($"瓦片：{coverage.MinZoom}–{coverage.DeepestZoom} 级，共 {tileCount:N0} 个");
@@ -112,7 +115,7 @@ public static class Packager
             algoZip = Path.Combine(request.OutputDirectory, ZipName(az, "algo"));
             var files = new List<string> { az };
             if (algoJson is not null) files.Add(algoJson);
-            ZipFiles(Path.GetDirectoryName(az)!, files, algoZip, onLog, cancellation,
+            ZipFiles(files, algoZip, onLog, cancellation,
                      progress: p => onProgress?.Invoke(0.8 + p * 0.2));
         }
 
@@ -135,46 +138,141 @@ public static class Packager
         return $"{name}_{suffix}.zip";
     }
 
+    /// <summary>读文件的并发度。单个小文件的 open+读把墙钟时间花在系统调用与
+    /// 杀软实时扫描上，并发读能把这些等待叠起来；写仍是单线程（ZipArchive 非线程安全）。</summary>
+    private static int ReadConcurrency => Math.Clamp(Environment.ProcessorCount, 2, 8);
+
+    /// <summary>不超过这个大小的文件整个读进内存再写；更大的（如整幅 tif）流式拷贝，不进内存。</summary>
+    private const long InlineThreshold = 4 * 1024 * 1024;
+
+    private readonly record struct ZipItem(string Name, string Path, byte[]? Bytes);
+
     private static void ZipDirectory(
         string directory, string zipPath, Action<string>? onLog,
         CancellationToken cancellation, Action<double>? progress)
     {
         var files = Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories).ToArray();
         var root = directory.TrimEnd(Path.DirectorySeparatorChar);
-        ZipFiles(root, files, zipPath, onLog, cancellation, progress,
+        ZipFiles(files, zipPath, onLog, cancellation, progress,
                  entryName: full => Path.GetRelativePath(root, full));
     }
 
     /// <param name="entryName">给出则在 zip 里用这个相对名（保留目录结构）；不给则只存文件名。</param>
     private static void ZipFiles(
-        string baseDirectory, IReadOnlyList<string> files, string zipPath,
+        IReadOnlyList<string> files, string zipPath,
         Action<string>? onLog, CancellationToken cancellation, Action<double>? progress,
         Func<string, string>? entryName = null)
     {
+        // **先写 .tmp、成功了再改名。** 上次一个 22 万瓦片的打包跑到 7 分半被取消，
+        // 目标路径上留了半个 zip——从文件名看不出它是半成品，这种"看起来能交付"
+        // 的残留不能留（.part 的同一思路，下载那边已经这么做了）。
+        var tmpPath = zipPath + ".tmp";
         if (File.Exists(zipPath)) File.Delete(zipPath);
+        if (File.Exists(tmpPath)) File.Delete(tmpPath);
 
         onLog?.Invoke($"打包 {files.Count:N0} 个文件 → {Path.GetFileName(zipPath)}");
-        using var zip = ZipFile.Open(zipPath, ZipArchiveMode.Create);
+        try
+        {
+            using (var zip = ZipFile.Open(tmpPath, ZipArchiveMode.Create))
+            {
+                WriteEntries(zip, files, entryName, cancellation, progress);
+            }
+            File.Move(tmpPath, zipPath, overwrite: true);
+        }
+        catch
+        {
+            if (File.Exists(tmpPath)) File.Delete(tmpPath);
+            throw;
+        }
 
-        for (var i = 0; i < files.Count; i++)
+        onLog?.Invoke($"完成：{zipPath}（{new FileInfo(zipPath).Length / (1024.0 * 1024):F0} MB）");
+    }
+
+    /// <summary>
+    /// 读并发、写单线程的生产者/消费者：读者把文件读进有界队列，写者按顺序塞进 zip。
+    ///
+    /// 队列满时读者自然减速（<see cref="BoundedChannelFullMode.Wait"/>），内存不会随
+    /// 目录规模涨；读侧失败通过 channel 交给写侧抛出，不会被吞在后台任务里。
+    /// </summary>
+    private static void WriteEntries(
+        ZipArchive zip, IReadOnlyList<string> files, Func<string, string>? entryName,
+        CancellationToken cancellation, Action<double>? progress)
+    {
+        var concurrency = ReadConcurrency;
+        var channel = Channel.CreateBounded<ZipItem>(new BoundedChannelOptions(concurrency * 4)
+        {
+            SingleReader = true,   // 只有本线程写 zip
+            FullMode = BoundedChannelFullMode.Wait,
+        });
+
+        var producing = Task.Run(async () =>
+        {
+            try
+            {
+                await Parallel.ForEachAsync(
+                    Enumerable.Range(0, files.Count),
+                    new ParallelOptions
+                    {
+                        MaxDegreeOfParallelism = concurrency,
+                        CancellationToken = cancellation,
+                    },
+                    async (i, ct) =>
+                    {
+                        var path = files[i];
+                        // 用 '\' 会让解压出来的层级取决于解压工具；zip 规范里分隔符就是 '/'。
+                        var name = (entryName?.Invoke(path) ?? Path.GetFileName(path)).Replace('\\', '/');
+                        byte[]? bytes = null;
+                        if (new FileInfo(path).Length <= InlineThreshold)
+                            bytes = await File.ReadAllBytesAsync(path, ct).ConfigureAwait(false);
+                        await channel.Writer.WriteAsync(new ZipItem(name, path, bytes), ct)
+                                     .ConfigureAwait(false);
+                    }).ConfigureAwait(false);
+                channel.Writer.TryComplete();
+            }
+            catch (Exception ex)
+            {
+                channel.Writer.TryComplete(ex);
+            }
+        });
+
+        try
+        {
+            var written = 0;
+            foreach (var item in channel.Reader.ReadAllAsync(cancellation).ToBlockingEnumerable())
+            {
+                cancellation.ThrowIfCancellationRequested();
+
+                // **不压缩**：.terrain 本身就是 gzip 流、GeoTIFF 是 LZW，再 deflate 一遍
+                // 只能省千分之几，却要多花几分钟 CPU（22 万个文件）。存储即可。
+                var entry = zip.CreateEntry(item.Name, CompressionLevel.NoCompression);
+                using var target = entry.Open();
+                if (item.Bytes is not null)
+                    target.Write(item.Bytes);
+                else
+                    CopyStream(item.Path, target, cancellation);
+
+                if (++written % 5000 == 0) progress?.Invoke((double)written / files.Count);
+            }
+            progress?.Invoke(1.0);
+        }
+        finally
+        {
+            channel.Writer.TryComplete();   // 写侧提前退出（取消/写失败）时别让读者卡死在满队列上
+            producing.GetAwaiter().GetResult();
+        }
+    }
+
+    /// <summary>大文件的流式拷贝；块间检查取消，别让一个几 GB 的文件吃掉整个取消响应。</summary>
+    private static void CopyStream(string path, Stream target, CancellationToken cancellation)
+    {
+        using var source = File.OpenRead(path);
+        var buffer = new byte[1024 * 1024];
+        while (true)
         {
             cancellation.ThrowIfCancellationRequested();
-
-            var path = files[i];
-            var name = entryName?.Invoke(path) ?? Path.GetFileName(path);
-            // 用 '\' 会让解压出来的层级取决于解压工具；zip 规范里目录分隔符就是 '/'。
-            name = name.Replace('\\', '/');
-
-            // **不压缩**：.terrain 本身就是 gzip 流、GeoTIFF 是 LZW，再 deflate 一遍
-            // 只能省千分之几，却要多花几分钟 CPU（22 万个文件）。存储即可。
-            var entry = zip.CreateEntry(name, CompressionLevel.NoCompression);
-            using var source = File.OpenRead(path);
-            using var target = entry.Open();
-            source.CopyTo(target);
-
-            if (i % 5000 == 0) progress?.Invoke((double)i / files.Count);
+            var read = source.Read(buffer, 0, buffer.Length);
+            if (read <= 0) break;
+            target.Write(buffer, 0, read);
         }
-        progress?.Invoke(1.0);
-        onLog?.Invoke($"完成：{zipPath}（{new FileInfo(zipPath).Length / (1024.0 * 1024):F0} MB）");
     }
 }

@@ -92,7 +92,14 @@ public sealed record LayerJson
         };
     }
 
-    /// <summary>扫瓦片目录，量出层级范围、瓦片数与地理范围。</summary>
+    /// <summary>
+    /// 扫瓦片目录，量出层级范围、瓦片数与地理范围。
+    ///
+    /// **只走一遍目录树。** 计数要所有层级，但包络只要最深一层的 x/y 区间——
+    /// 层越浅、单块瓦片覆盖越大，粗层的包络只会更松，所以浅层文件除计数外
+    /// 不需要解析路径。曾经这里先扫最深一层、再逐层 LongCount 一遍，22 万瓦片
+    /// 的目录在打包路径上被完整遍历多遍（打包本身还要再枚举一次），现在合成一遍。
+    /// </summary>
     public static TileCoverage? InspectTiles(string tileDirectory)
     {
         if (!Directory.Exists(tileDirectory)) return null;
@@ -104,33 +111,31 @@ public sealed record LayerJson
             .OrderBy(z => z)
             .ToArray();
         if (levels.Length == 0) return null;
-
-        // 最深层的瓦片包络就是最紧的范围：层越浅、单块瓦片覆盖越大，
-        // 粗层的包络只会更松。所以只扫最深一层，既准又省。
         var deepest = levels[^1];
-        long count = 0, xMin = long.MaxValue, xMax = long.MinValue;
+
+        long total = 0, deepestCount = 0;
+        long xMin = long.MaxValue, xMax = long.MinValue;
         long yMin = long.MaxValue, yMax = long.MinValue;
 
-        foreach (var xDir in Directory.EnumerateDirectories(Path.Combine(tileDirectory, deepest.ToString())))
+        foreach (var file in Directory.EnumerateFiles(tileDirectory, "*.terrain", SearchOption.AllDirectories))
         {
-            if (!long.TryParse(Path.GetFileName(xDir), out var x)) continue;
-            foreach (var file in Directory.EnumerateFiles(xDir, "*.terrain"))
-            {
-                if (!long.TryParse(Path.GetFileNameWithoutExtension(file), out var y)) continue;
-                count++;
-                if (x < xMin) xMin = x;
-                if (x > xMax) xMax = x;
-                if (y < yMin) yMin = y;
-                if (y > yMax) yMax = y;
-            }
-        }
-        if (count == 0) return null;
+            // 目录结构固定是 <z>/<x>/<y>.terrain，拆三段拿到三个数。
+            var parts = Path.GetRelativePath(tileDirectory, file)
+                            .Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            if (parts.Length != 3) continue;
+            if (!int.TryParse(parts[0], out var z)) continue;   // 只认数字层级目录（与旧口径一致）
+            total++;
+            if (z != deepest) continue;
 
-        // 总瓦片数要把浅层也算上，不能只报最深一层。
-        long total = 0;
-        foreach (var z in levels)
-            total += Directory.EnumerateFiles(Path.Combine(tileDirectory, z.ToString()),
-                                              "*.terrain", SearchOption.AllDirectories).LongCount();
+            if (!long.TryParse(parts[1], out var x)) continue;
+            if (!long.TryParse(Path.GetFileNameWithoutExtension(parts[2]), out var y)) continue;
+            deepestCount++;
+            if (x < xMin) xMin = x;
+            if (x > xMax) xMax = x;
+            if (y < yMin) yMin = y;
+            if (y > yMax) yMax = y;
+        }
+        if (deepestCount == 0) return null;
 
         return new TileCoverage(levels[0], deepest, total, BoundsOfTileRange(deepest, xMin, xMax, yMin, yMax));
     }

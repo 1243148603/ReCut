@@ -35,6 +35,11 @@ public sealed record DownloadOutcome(
 ///      本身就等于"这份数据完整"。
 ///   3. **源不可达就如实报错，不换源**。静默回退到别的源会让"这批数据是从哪下的"
 ///      变得不可追溯（FR-16）。
+///
+/// **并发下载。** 单连接从境外 S3 拉 45 MB 常常只有几 MB/s（RTT 与丢包限制单流
+/// 吞吐），但多开几条连接各自的瓶颈互不相干——实测并发 4 能把整批的墙钟时间按
+/// 接近线性的比例压下来（见 CHANGELOG）。所以整批分幅用有界并发跑，单幅内部的
+/// 逻辑（HEAD/跳过/续传/重试）一条都没变。
 /// </summary>
 public static class Downloader
 {
@@ -43,6 +48,7 @@ public static class Downloader
 
     private const int MaxAttempts = 3;
 
+    /// <param name="parallelism">同时在下的分幅数。1 = 旧的串行行为。</param>
     public static async Task<DownloadOutcome> RunAsync(
         DownloadSource source,
         IReadOnlyList<DemTile> tiles,
@@ -50,7 +56,8 @@ public static class Downloader
         PauseToken? pause,
         IProgress<(int Done, int Total, string Current, long Bytes)>? progress,
         Action<string>? onLog,
-        CancellationToken cancellation)
+        CancellationToken cancellation,
+        int parallelism = 4)
     {
         Directory.CreateDirectory(saveDirectory);
 
@@ -58,36 +65,47 @@ public static class Downloader
         {
             ConnectTimeout = TimeSpan.FromSeconds(20),
             PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+            // 默认值本来就不限，显式写出来是防止以后有人"顺手"调小把并发卡住。
+            MaxConnectionsPerServer = Math.Max(parallelism + 2, 8),
         };
         using var http = new HttpClient(handler) { Timeout = Timeout.InfiniteTimeSpan };
 
-        var results = new List<TileResult>(tiles.Count);
+        // 按索引写定长数组：并发的完成顺序是乱的，但结果顺序必须与输入一致
+        // （CLI 断言 Results[0]，历史/摘要也按这个顺序展示）。
+        var results = new TileResult[tiles.Count];
         long totalBytes = 0;
-        var index = 0;
+        var done = 0;
 
-        foreach (var tile in tiles)
-        {
-            cancellation.ThrowIfCancellationRequested();
-            pause?.WaitIfPaused(cancellation);
+        await Parallel.ForEachAsync(
+            Enumerable.Range(0, tiles.Count),
+            new ParallelOptions
+            {
+                MaxDegreeOfParallelism = Math.Max(1, parallelism),
+                CancellationToken = cancellation,
+            },
+            async (i, ct) =>
+            {
+                pause?.WaitIfPaused(ct);
+                var tile = tiles[i];
+                var destination = Path.Combine(saveDirectory, tile.Name + ".tif");
+                var url = source.Expand(tile);
 
-            var destination = Path.Combine(saveDirectory, tile.Name + ".tif");
-            var url = source.Expand(tile);
-            progress?.Report((index, tiles.Count, tile.Name, totalBytes));
+                var result = await FetchOneAsync(http, url, destination, tile, pause, ct)
+                    .ConfigureAwait(false);
+                results[i] = result;
 
-            var result = await FetchOneAsync(http, url, destination, tile, pause, cancellation)
-                .ConfigureAwait(false);
-            results.Add(result);
-            totalBytes += result.Bytes;
+                // 进度按"完成"上报；Done/Bytes 用 Interlocked 是因为多幅同时收尾。
+                var bytes = Interlocked.Add(ref totalBytes, result.Bytes);
+                var n = Interlocked.Increment(ref done);
+                progress?.Report((n, tiles.Count, tile.Name, bytes));
 
-            if (result.Outcome == TileOutcome.Failed)
-                onLog?.Invoke($"[失败] {tile.Name}：{result.Error}");
-            else if (result.Outcome == TileOutcome.NotFound)
-                onLog?.Invoke($"[缺失] {tile.Name}：远端没有这一幅");
+                if (result.Outcome == TileOutcome.Failed)
+                    onLog?.Invoke($"[失败] {tile.Name}：{result.Error}");
+                else if (result.Outcome == TileOutcome.NotFound)
+                    onLog?.Invoke($"[缺失] {tile.Name}：远端没有这一幅");
+            }).ConfigureAwait(false);
 
-            index++;
-        }
-
-        progress?.Report((index, tiles.Count, "", totalBytes));
+        progress?.Report((tiles.Count, tiles.Count, "", totalBytes));
 
         var downloaded = results.Count(r => r.Outcome == TileOutcome.Downloaded);
         var skipped = results.Count(r => r.Outcome == TileOutcome.Skipped);

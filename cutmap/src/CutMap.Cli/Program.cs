@@ -59,12 +59,20 @@ internal static class Program
                 return BoundaryCommand.Run(@"D:\Map");
 
             case "download":
-                return DownloadCommand.RunAsync(@"D:\Map", args.Contains("--network")).GetAwaiter().GetResult();
+            {
+                var limit = OptionValue(args, "--limit") is { } l && int.TryParse(l, out var n) ? n : 1;
+                return DownloadCommand.RunAsync(@"D:\Map", args.Contains("--network"), limit)
+                                     .GetAwaiter().GetResult();
+            }
 
             case "publish":
             {
                 if (args.Length < 2) return Usage();
-                return PackageCommand.Publish(args[1], args.Length > 2 ? args[2] : null);
+                // 位置参数：<瓦片目录> [裁剪 GeoTIFF]；--zip 额外产出瓦片 zip
+                // （落在瓦片目录的上一级），并打印耗时供测速/回归对比。
+                var positional = args.Skip(2)
+                    .Where(a => !a.StartsWith("--", StringComparison.Ordinal)).ToArray();
+                return PackageCommand.Publish(args[1], positional.FirstOrDefault(), args.Contains("--zip"));
             }
 
             case "package":
@@ -94,6 +102,13 @@ internal static class Program
         }
     }
 
+    /// <summary>取 <c>--名字 值</c> 形式的选项值；没有就返回 null。</summary>
+    private static string? OptionValue(string[] args, string name)
+    {
+        var i = Array.FindIndex(args, a => a.Equals(name, StringComparison.OrdinalIgnoreCase));
+        return i >= 0 && i + 1 < args.Length ? args[i + 1] : null;
+    }
+
     private static int Usage()
     {
         Console.Error.WriteLine("""
@@ -108,11 +123,14 @@ internal static class Program
                                      多幅 DEM 拼接裁剪 + 算法元数据
               warp-vector <行政区代码> [输出文件]
                                      按真实行政边界裁剪（默认 156500000 重庆市）
-              publish <瓦片目录> [裁剪后的 tif]
-                                     写 layer.json / 部署说明 / 算法元数据（不打 zip）
+              publish <瓦片目录> [裁剪后的 tif] [--zip]
+                                     写 layer.json / 部署说明 / 算法元数据；
+                                     --zip 额外产出瓦片 zip（落在瓦片目录上一级）
               package [瓦片目录] [tif] [输出目录]
                                      打包与双产物（三种开关组合的验收）
-              download [--network]   分幅枚举与 URL 模板展开
+              download [--network] [--limit N]
+                                     分幅枚举与 URL 模板展开；
+                                     联网段默认下 1 幅，--limit N 可下单批前 N 幅（测速用）
               verify [瓦片目录] [源 DEM]
                                      校验瓦片集能否被 Cesium 加载
 

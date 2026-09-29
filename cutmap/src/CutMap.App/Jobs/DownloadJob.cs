@@ -48,8 +48,10 @@ public sealed class DownloadJob : Job
         {
             var fraction = p.Total == 0 ? 0 : (double)p.Done / p.Total;
             onProgress(Math.Clamp(fraction, 0, 1));
+            // 并发下载下进度是按"完成"上报的（Done 是已完成幅数），日志口径跟着改；
+            // 完成顺序不等于输入顺序，所以这里只报"哪幅完成了"，不暗示序号含义。
             if (p.Current.Length > 0)
-                onLog($"[{p.Done + 1}/{p.Total}] {p.Current}（累计 {p.Bytes / (1024.0 * 1024):F1} MB）");
+                onLog($"[{p.Done}/{p.Total}] {p.Current} 完成（累计 {p.Bytes / (1024.0 * 1024):F1} MB）");
         });
 
         var outcome = Downloader.RunAsync(

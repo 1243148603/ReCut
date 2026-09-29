@@ -1,4 +1,7 @@
 using System.Diagnostics;
+using System.Net;
+using System.Net.Sockets;
+using System.Text;
 using CutMap.Core.Download;
 using CutMap.Core.Geo;
 
@@ -14,7 +17,8 @@ internal static class DownloadCommand
         "https://copernicus-dem-30m.s3.amazonaws.com/" +
         "Copernicus_DSM_COG_10_N29_00_E106_00_DEM/Copernicus_DSM_COG_10_N29_00_E106_00_DEM.tif";
 
-    public static async Task<int> RunAsync(string repoRoot, bool network)
+    /// <param name="limit">联网段批量下载的幅数（&gt;1 时加测一轮吞吐，测速用）。</param>
+    public static async Task<int> RunAsync(string repoRoot, bool network, int limit = 1)
     {
         var ok = true;
         var chongqing = new BBox(105.3, 28.1, 110.2, 32.2);
@@ -59,6 +63,11 @@ internal static class DownloadCommand
         var noPlaceholder = official with { UrlTemplate = "https://example.invalid/fixed.tif" };
         ok &= Check("无占位符的模板被拒", !noPlaceholder.IsUsable(out _));
 
+        // ---------- 三、并发（离线：本地慢速源） ----------
+        Console.WriteLine();
+        Console.WriteLine("三、整批并发（离线：每个请求延迟 600 ms 的本地源）");
+        ok &= await ConcurrencyTestAsync(tiles);
+
         if (!network)
         {
             Console.WriteLine();
@@ -67,9 +76,9 @@ internal static class DownloadCommand
             return ok ? 0 : 1;
         }
 
-        // ---------- 三、实际下载：跳过与续传 ----------
+        // ---------- 四、实际下载：跳过与续传 ----------
         Console.WriteLine();
-        Console.WriteLine("三、实际下载（只取 1 幅，约 45 MB）");
+        Console.WriteLine("四、实际下载（只取 1 幅，约 45 MB）");
         var saveDir = Path.Combine(repoRoot, "cutmap", "_gate", "download");
         if (Directory.Exists(saveDir)) Directory.Delete(saveDir, true);
 
@@ -125,6 +134,28 @@ internal static class DownloadCommand
         ok &= Check($"只取了剩余部分（应约 {(expectedRemaining / (1024.0 * 1024)):F1} MB，" +
                     $"整幅 {(fullLength / (1024.0 * 1024)):F1} MB）", resumeOk);
         ok &= Check("没有残留 .part", !File.Exists(partPath));
+
+        // ---------- 五、批量吞吐（可选，--limit N） ----------
+        if (limit > 1)
+        {
+            var batch = tiles.Take(limit).ToArray();
+            Console.WriteLine();
+            Console.WriteLine($"五、批量下载 {batch.Length} 幅（测吞吐）");
+            var batchDir = Path.Combine(repoRoot, "cutmap", "_gate", "download_batch");
+            if (Directory.Exists(batchDir)) Directory.Delete(batchDir, true);
+
+            sw.Restart();
+            var batchOutcome = await Downloader.RunAsync(
+                official, batch, batchDir, pause: null, progress: null,
+                onLog: line => Console.WriteLine("  " + line), cancellation: CancellationToken.None);
+            sw.Stop();
+
+            var mb = batchOutcome.BytesDownloaded / (1024.0 * 1024);
+            var seconds = Math.Max(sw.Elapsed.TotalSeconds, 0.001);
+            Console.WriteLine($"  {batchOutcome.Summary}；{mb:F1} MB / {sw.Elapsed.TotalSeconds:F1} s " +
+                              $"= {mb / seconds:F1} MB/s");
+            ok &= Check("批量下载无失败", batchOutcome.Succeeded);
+        }
 
         Console.WriteLine();
         Console.WriteLine(ok ? "PASS  M4：分幅枚举、模板展开、跳过与续传" : "FAIL  M4");
@@ -190,6 +221,42 @@ internal static class DownloadCommand
         return ok ? 0 : 1;
     }
 
+    /// <summary>
+    /// 验证"整批并发"真的在并发：本地起一个每个请求延迟 600 ms 的迷你 HTTP 源，
+    /// 看源端观测到的并发连接峰值。峰值 ≥ 3 即证明 4 幅确实同时在跑——比
+    /// "耗时比串行短"这种时间断言更抗机器负载（这台机器同时在干别的也成立）。
+    /// </summary>
+    private static async Task<bool> ConcurrencyTestAsync(IReadOnlyList<DemTile> tiles)
+    {
+        var ok = true;
+        using var slow = new SlowHttpSource(delayMs: 600);
+        var local = new DownloadSource
+        {
+            Id = "slow-local",
+            Name = "本地慢速源",
+            UrlTemplate = $"http://127.0.0.1:{slow.Port}/{{name}}.tif",
+            Description = "每个请求延迟 600 ms，用于验证整批并发",
+        };
+
+        var batch = tiles.Take(4).ToArray();
+        var dir = Path.Combine(Path.GetTempPath(), "cutmap-concurrency");
+        if (Directory.Exists(dir)) Directory.Delete(dir, true);
+
+        var sw = Stopwatch.StartNew();
+        var outcome = await Downloader.RunAsync(
+            local, batch, dir, pause: null, progress: null,
+            onLog: null, cancellation: CancellationToken.None);
+        sw.Stop();
+
+        // 每幅要 HEAD+GET 两个请求，串行的下界 = 4 幅 × 2 × 0.6 s = 4.8 s。
+        Console.WriteLine($"  {batch.Length} 幅用时 {sw.Elapsed.TotalSeconds:F1} s" +
+                          $"（串行下界约 {batch.Length * 2 * 0.6:F1} s），" +
+                          $"源端并发峰值 {slow.MaxConcurrent}");
+        ok &= Check("全部下载成功", outcome.Succeeded);
+        ok &= Check($"并发峰值 ≥ 3（实测 {slow.MaxConcurrent}）", slow.MaxConcurrent >= 3);
+        return ok;
+    }
+
     private static bool Check(string label, string actual, string expected)
     {
         var pass = actual == expected;
@@ -199,4 +266,92 @@ internal static class DownloadCommand
 
     private static bool Check(string label, bool pass) =>
         Check(label, pass ? "是" : "否", "是");
+
+    /// <summary>
+    /// 每个请求延迟若干毫秒的迷你 HTTP 源。用裸 <see cref="TcpListener"/> 而不是
+    /// HttpListener：后者走 HTTP.sys，非管理员绑定前缀会失败；裸 socket 没有这层。
+    /// 记录同时打开的连接数峰值，供并发断言使用。
+    /// </summary>
+    private sealed class SlowHttpSource : IDisposable
+    {
+        private readonly TcpListener _listener = new(IPAddress.Loopback, 0);
+        private readonly CancellationTokenSource _cts = new();
+        private readonly int _delayMs;
+        private int _active;
+        private int _maxActive;
+
+        public SlowHttpSource(int delayMs)
+        {
+            _delayMs = delayMs;
+            _listener.Start();
+            _ = AcceptLoopAsync();   // 后台接受连接；Dispose 时由 _cts 收尾
+        }
+
+        public int Port => ((IPEndPoint)_listener.LocalEndpoint).Port;
+
+        public int MaxConcurrent => Volatile.Read(ref _maxActive);
+
+        private async Task AcceptLoopAsync()
+        {
+            while (!_cts.IsCancellationRequested)
+            {
+                TcpClient client;
+                try
+                {
+                    client = await _listener.AcceptTcpClientAsync(_cts.Token);
+                }
+                catch (Exception)
+                {
+                    return;   // Dispose 停掉监听；这里没有别的退出路径
+                }
+                _ = HandleAsync(client);
+            }
+        }
+
+        private async Task HandleAsync(TcpClient client)
+        {
+            using (client)
+            {
+                var now = Interlocked.Increment(ref _active);
+                int prev;
+                do { prev = Volatile.Read(ref _maxActive); }
+                while (now > prev && Interlocked.CompareExchange(ref _maxActive, now, prev) != prev);
+                try
+                {
+                    var stream = client.GetStream();
+                    using var reader = new StreamReader(stream, Encoding.ASCII, false, 1024, leaveOpen: true);
+                    var requestLine = await reader.ReadLineAsync();
+                    if (requestLine is null) return;
+                    var method = requestLine.Split(' ')[0];
+                    while (!string.IsNullOrEmpty(await reader.ReadLineAsync())) { }
+
+                    await Task.Delay(_delayMs);   // 模拟慢源：延迟发生在"能开始传数据"之前
+
+                    var body = new byte[1024];
+                    Random.Shared.NextBytes(body);
+                    var head =
+                        $"HTTP/1.1 200 OK\r\nContent-Length: {body.Length}\r\n" +
+                        "Content-Type: application/octet-stream\r\nConnection: close\r\n\r\n";
+                    await stream.WriteAsync(Encoding.ASCII.GetBytes(head));
+                    if (method == "GET") await stream.WriteAsync(body);
+                    await stream.FlushAsync();
+                }
+                catch (IOException)
+                {
+                    // 客户端中途断开（例如取消）不该把服务器打挂
+                }
+                finally
+                {
+                    Interlocked.Decrement(ref _active);
+                }
+            }
+        }
+
+        public void Dispose()
+        {
+            _cts.Cancel();
+            _listener.Stop();
+            _cts.Dispose();
+        }
+    }
 }

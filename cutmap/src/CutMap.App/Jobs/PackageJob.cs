@@ -50,14 +50,20 @@ public sealed class PackageJob : Job
 
         // 用户能编辑 name/description/version，但 format/scheme/tiles/extensions
         // 是格式约定，不开放——填错了产物就加载不了（FR-03）。
+        // **只扫一遍目录**：layer.json 的 minzoom/bounds 与打包要的瓦片统计
+        // 共用这一次扫描的结果（22 万瓦片扫一遍要好几秒，之前这条路上扫了四遍）。
         LayerJson? layer = null;
+        TileCoverage? coverage = null;
         if (TilesDirectory is { } tilesDir)
         {
-            var inferred = LayerJson.FromExistingTiles(
-                tilesDir, LayerName, LayerDescription, LayerVersion);
-            layer = inferred;
-            onLog($"layer.json：{layer.MinZoom}–{layer.MaxZoom} 级，" +
-                  $"bounds [{string.Join(", ", layer.Bounds.Select(v => v.ToString("F4")))}]");
+            coverage = LayerJson.InspectTiles(tilesDir);
+            if (coverage is not null)
+            {
+                layer = LayerJson.Create(LayerName, LayerDescription, LayerVersion,
+                                         coverage.Bounds, coverage.MinZoom, coverage.DeepestZoom);
+                onLog($"layer.json：{layer.MinZoom}–{layer.MaxZoom} 级，" +
+                      $"bounds [{string.Join(", ", layer.Bounds.Select(v => v.ToString("F4")))}]");
+            }
         }
 
         var result = Packager.Run(
@@ -67,7 +73,8 @@ public sealed class PackageJob : Job
                 AlgoTifPath,
                 ZipTiles,
                 ZipAlgo,
-                layer),
+                layer,
+                coverage),
             onProgress, onLog, cancellation);
 
         return new JobResult(true, result.Summary, null,

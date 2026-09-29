@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using CutMap.Core.Packaging;
 using CutMap.Core.Terrain;
@@ -15,12 +16,13 @@ namespace CutMap.Cli;
 internal static class PackageCommand
 {
     /// <summary>
-    /// 真实体量的发布：写 layer.json + 部署说明 + 算法元数据，**不打 zip**。
+    /// 真实体量的发布：写 layer.json + 部署说明 + 算法元数据；<paramref name="zip"/>
+    /// 时再产出瓦片 zip（落在瓦片目录的上一级）并打印耗时与吞吐，供测速/回归对比。
     ///
-    /// 与 <see cref="Run"/> 的区别：那个是小数据上的三组合验收（要打 zip 验证
-    /// 开关组合），22 万瓦片打两次 zip 太慢；这个只跑一遍真实产物，用于端到端。
+    /// 与 <see cref="Run"/> 的区别：那个是小数据上的三组合验收（验证开关组合），
+    /// 这个跑真实产物，用于端到端与性能测量。
     /// </summary>
-    public static int Publish(string tilesDir, string? tifPath)
+    public static int Publish(string tilesDir, string? tifPath, bool zip = false)
     {
         if (!Directory.Exists(tilesDir))
         {
@@ -29,18 +31,32 @@ internal static class PackageCommand
         }
 
         var ok = true;
-        Console.WriteLine("打包（写 layer.json / 部署说明 / 算法元数据）");
+        Console.WriteLine("打包（写 layer.json / 部署说明 / 算法元数据" + (zip ? " / 瓦片 zip" : "") + "）");
+        var sw = Stopwatch.StartNew();
         var result = Packager.Run(
             new PackageRequest(
                 Path.Combine(tilesDir, ".."),
                 TilesDirectory: tilesDir,
                 AlgoTifPath: File.Exists(tifPath) ? tifPath : null,
-                ZipTiles: false, ZipAlgo: false),
+                ZipTiles: zip, ZipAlgo: false),
             onLog: line => Console.WriteLine("  " + line));
+        sw.Stop();
 
-        Console.WriteLine($"  产物：{result.Summary}");
+        Console.WriteLine($"  产物：{result.Summary}（耗时 {sw.Elapsed.TotalSeconds:F1} s）");
         ok &= result.LayerJsonPath is not null;
         ok &= result.DeployReadmePath is not null;
+
+        if (zip)
+        {
+            ok &= Check("瓦片 zip 已产出", result.TilesZipPath is not null);
+            if (result.TilesZipPath is { } zp)
+            {
+                var mb = new FileInfo(zp).Length / (1024.0 * 1024);
+                Console.WriteLine($"  zip：{zp}");
+                Console.WriteLine($"  {mb:F0} MB，{sw.Elapsed.TotalSeconds:F1} s，" +
+                                  $"{mb / Math.Max(sw.Elapsed.TotalSeconds, 0.001):F1} MB/s");
+            }
+        }
 
         if (result.LayerJsonPath is { } lp)
         {

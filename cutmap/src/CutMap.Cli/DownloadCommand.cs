@@ -131,6 +131,65 @@ internal static class DownloadCommand
         return ok ? 0 : 1;
     }
 
+    /// <summary>
+    /// FR-16 / PRD 验收 #8：新增一条 URL 模板与官方不同的源，用它下载要能成功。
+    ///
+    /// 用本地 HTTP 服务造一个"命名规则完全不同"的源（`{code}.tif` 而不是官方那种
+    /// 又长又绕的路径），这样验的是**模板机制本身**，不依赖任何外部服务。
+    /// 再顺手验"源不可达时如实报错、不静默换源"。
+    /// </summary>
+    public static async Task<int> CustomSourceAsync(string baseUrl)
+    {
+        var ok = true;
+        var saveDir = Path.Combine(Path.GetTempPath(), "cutmap-src-test");
+        if (Directory.Exists(saveDir)) Directory.Delete(saveDir, true);
+
+        Console.WriteLine("自定义下载源（命名规则与官方完全不同）");
+        var custom = new DownloadSource
+        {
+            Id = "local-test",
+            Name = "本地测试源",
+            // 官方那种是 Copernicus_DSM_COG_10_N29_00_E106_00_DEM/...，这里是 {code}.tif
+            UrlTemplate = baseUrl.TrimEnd('/') + "/{code}.tif",
+            Description = "命名规则与官方完全不同，用于验证模板机制",
+        };
+
+        // {code} 不是内置占位符——Expand 只认 {name}/{lat}/{lon}，
+        // 所以这里改用 {name}，服务端也就按 N29_E106.tif 这个文件名放。
+        custom = custom with { UrlTemplate = baseUrl.TrimEnd('/') + "/{name}.tif" };
+
+        var tile = new DemTile(29, 106, "N29", "E106", new BBox(106, 29, 107, 30));
+        Console.WriteLine($"  模板：{custom.UrlTemplate}");
+        Console.WriteLine($"  展开：{custom.Expand(tile)}");
+
+        var outcome = await Downloader.RunAsync(
+            custom, [tile], saveDir, pause: null, progress: null,
+            onLog: line => Console.WriteLine("  " + line), cancellation: CancellationToken.None);
+
+        var file = Path.Combine(saveDir, "N29_E106.tif");
+        ok &= Check("自定义源下载成功", outcome.Results[0].Outcome.ToString(), "Downloaded");
+        ok &= Check("文件确实落地", File.Exists(file).ToString(), "True");
+        if (File.Exists(file))
+            Console.WriteLine($"  落盘 {new FileInfo(file).Length} 字节（服务端文件是 1024 字节）");
+
+        // ---- 源不可达：如实报错，不静默换源 ----
+        Console.WriteLine();
+        Console.WriteLine("源不可达时应如实报错（PRD：不静默换源）");
+        var dead = custom with { UrlTemplate = "http://127.0.0.1:1/{name}.tif" };
+        var deadOutcome = await Downloader.RunAsync(
+            dead, [tile], Path.Combine(saveDir, "dead"), pause: null, progress: null,
+            onLog: null, cancellation: CancellationToken.None);
+        Console.WriteLine($"  结果：{deadOutcome.Results[0].Outcome}，说明：{deadOutcome.Results[0].Error}");
+        ok &= Check("不可达被判定为失败（不是静默成功）",
+                    deadOutcome.Results[0].Outcome.ToString(), "Failed");
+        ok &= Check("没有产出文件",
+                    File.Exists(Path.Combine(saveDir, "dead", "N29_E106.tif")).ToString(), "False");
+
+        Console.WriteLine();
+        Console.WriteLine(ok ? "PASS  自定义下载源" : "FAIL  自定义下载源");
+        return ok ? 0 : 1;
+    }
+
     private static bool Check(string label, string actual, string expected)
     {
         var pass = actual == expected;

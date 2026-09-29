@@ -146,6 +146,39 @@ internal static class Gates
         Console.WriteLine($"  层级目录: {string.Join(", ", levels)}");
         Console.WriteLine($"  用时: {result.Elapsed.TotalSeconds:F2} s");
 
+        // ---- 取消：切片中途喊停，验证子进程真的终止 ----
+        // PRD 验收 #4 明确要求"切片中途取消后子进程确实终止"。
+        // 做法：让同一个 60×60 的小栅格切到很深的层级——按瓦片数而不是按栅格大小
+        // 制造一个跑得够久的任务，这样测试不依赖任何仓库外的大文件。
+        Console.WriteLine();
+        Console.WriteLine("取消测试：切到 z18 制造一个长任务，2 秒后取消");
+        var cancelDir = Path.Combine(workDir, "tiles_cancel");
+        using var cts = new CancellationTokenSource();
+        var cancelSawProgress = false;
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+
+        var cancelTask = Task.Run(() => CtbTileRunner.Run(
+            home,
+            new CtbTileRequest(small, cancelDir, StartZoom: 18, EndZoom: 0),
+            onProgress: _ => cancelSawProgress = true,
+            onLog: null,
+            cancellation: cts.Token));
+
+        // 等它真的开始跑再取消，否则测的是"取消一个还没启动的任务"。
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (!cancelSawProgress && DateTime.UtcNow < deadline) Thread.Sleep(50);
+        cts.Cancel();
+        var cancelled = cancelTask.GetAwaiter().GetResult();
+        sw.Stop();
+
+        var stillRunning = System.Diagnostics.Process.GetProcessesByName("ctb-tile").Length;
+        ok &= Check("取消前已经开始跑", cancelSawProgress ? "是" : "否", "是", cancelSawProgress);
+        ok &= Check("取消后响应及时（< 10 s）", $"{sw.Elapsed.TotalSeconds:F1} s", "< 10 s",
+                    sw.Elapsed.TotalSeconds < 10);
+        ok &= Check("没有残留的 ctb-tile 进程", $"{stillRunning} 个", "0 个", stillRunning == 0);
+        ok &= Check("残留 *.tmp 已清理", $"{cancelled.TempFilesLeft.Count} 个", "0 个",
+                    cancelled.TempFilesLeft.Count == 0);
+
         // ---- 反向：喂一个坏输入，验证退出码陷阱确实被抓住 ----
         Console.WriteLine();
         Console.WriteLine("负向测试：故意喂一个非栅格文件，验证「失败却返回 0」能被检出");

@@ -51,6 +51,10 @@ internal static class Program
                     args.Length > 1 ? args[1] : "156500000",
                     args.Length > 2 ? args[2] : null);
 
+            case "source-test":
+                if (args.Length < 2) return Usage();
+                return DownloadCommand.CustomSourceAsync(args[1]).GetAwaiter().GetResult();
+
             case "boundary":
                 return BoundaryCommand.Run(@"D:\Map");
 

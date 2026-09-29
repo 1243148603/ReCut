@@ -33,7 +33,7 @@ internal static class BoundaryCommand
         Console.WriteLine("二、加载、过滤「境界线」、搜索");
         var store = BoundaryStore.Load(resources);
         Console.WriteLine("  " + store.Describe());
-        ok &= Check("加载到 3 个行政区域", store.All.Count.ToString(), "3");
+        ok &= Check("加载到 4 个行政区域", store.All.Count.ToString(), "4");
         ok &= Check("滤掉 1 个无编码境界线", store.SkippedNonAdministrative.ToString(), "1");
         ok &= Check("境界线不在可选列表里",
                     store.All.All(f => f.IsAdministrative).ToString(), "True");
@@ -44,9 +44,9 @@ internal static class BoundaryCommand
         ok &= Check("区县的上级是市级",
                     county?.Code is { } cc ? store.ParentOf(cc) ?? "(无)" : "(无)", "156500100");
         ok &= Check("省级下有 1 个市", store.ChildrenOf("156500000").Count.ToString(), "1");
-        ok &= Check("市级下有 1 个县", store.ChildrenOf("156500100").Count.ToString(), "1");
-        ok &= Check("省级的全体后代是 2 个（市+县）",
-                    store.DescendantsOf("156500000").Count.ToString(), "2");
+        ok &= Check("市级下有 2 个县", store.ChildrenOf("156500100").Count.ToString(), "2");
+        ok &= Check("省级的全体后代是 3 个（市+2 县）",
+                    store.DescendantsOf("156500000").Count.ToString(), "3");
 
         // ---------- 三、cutline 与矢量裁剪 ----------
         Console.WriteLine();
@@ -137,6 +137,40 @@ internal static class BoundaryCommand
         ok &= Check("坐标合法的数据没有范围警告",
                     noCrsReport.Warnings.All(w => !w.Contains("超出经纬度范围")));
 
+        // ---------- 四点六、dissolve 取并集 ----------
+        // 单个要素没什么可合并的，证明不了 dissolve——必须用**相邻**的两个区县，
+        // 合并后公共边界上的顶点应当消失。
+        Console.WriteLine();
+        Console.WriteLine("四点六、dissolve 取并集");
+        var syntheticStore = BoundaryStore.Load(resources);
+        var provinceNode = syntheticStore.ByCode("156500000")!;
+        var twoDistricts = syntheticStore.DescendantsOf(provinceNode.Code!).ToArray();
+        if (twoDistricts.Length >= 2)
+        {
+            // 取两个**接壤**的区县（巴南区与九龙坡区共用 105.430 那条边）。
+            // 拿两个同位置的方块去合并是验不出"公共边被消掉"的。
+            var pair = twoDistricts.Where(f => f.Level == BoundaryLevel.县).Take(2).ToArray();
+            if (pair.Length < 2) pair = twoDistricts.Take(2).ToArray();
+            var before = pair.Sum(f => VertexCount(f.GeometryJson));
+            var mergedPath = Path.Combine(workDir, "dissolved.geojson");
+            BoundaryExport.WriteProductBoundary(pair, syntheticStore, mergedPath, "dissolve-test",
+                                                sourceNotes: []);
+            var mergedText = File.ReadAllText(mergedPath);
+            var doc = System.Text.Json.JsonDocument.Parse(mergedText);
+            var outline = doc.RootElement.GetProperty("features")[0]
+                             .GetProperty("geometry").GetRawText();
+            var after = VertexCount(outline);
+            Console.WriteLine($"  合并 {string.Join(" + ", pair.Select(f => f.Name))}");
+            Console.WriteLine($"  顶点数：合并前 {before} → 合并后 {after}");
+            ok &= Check("合并后顶点数减少（公共边界被消掉）", after < before);
+            ok &= Check("外轮廓不含 GeometryCollection 包裹",
+                        !outline.Contains("GeometryCollection", StringComparison.Ordinal));
+        }
+        else
+        {
+            Console.WriteLine("  （合成数据不足两个下级，跳过）");
+        }
+
         // ---------- 五、真实数据（DataV GeoAtlas，全国省/市/县）----------
         Console.WriteLine();
         Console.WriteLine("五、真实边界数据");
@@ -184,6 +218,40 @@ internal static class BoundaryCommand
             ok &= Check("推到的是外接矩形的子集",
                         byBoundary.All(t => byBounds.Any(b => b.Name == t.Name)));
             ok &= Check("重庆全域仍在 30 幅以内", byBoundary.Count is > 0 and <= 30);
+
+            // dissolve 在真实数据上再验一遍：取重庆的两个相邻区县，
+            // 它们的公共边在合并后应当消失，顶点数明显下降。
+            // 取重庆的**全部 38 个区县**合并。它们拼起来正好是重庆市，所以：
+            //   · 合并结果应当明显少于各区县顶点之和（区县之间的界线被消掉）
+            //   · 合并结果的规模应当与重庆市本身的轮廓相当
+            // 用"两个区县"是不确定的——万一它们不接壤，分离多边形合并后顶点数不变，
+            // 看起来像 dissolve 没生效，其实是数据选得不对。
+            var allDistricts = districts.Where(f => f.Level == BoundaryLevel.县).ToArray();
+            if (allDistricts.Length > 1)
+            {
+                var before = allDistricts.Sum(f => VertexCount(f.GeometryJson));
+                var realMerged = Path.Combine(workDir, "real_dissolved.geojson");
+                BoundaryExport.WriteProductBoundary(
+                    allDistricts, real, realMerged, "dissolve-real", sourceNotes: []);
+                var realOutline = System.Text.Json.JsonDocument
+                    .Parse(File.ReadAllText(realMerged))
+                    .RootElement.GetProperty("features")[0].GetProperty("geometry").GetRawText();
+                var after = VertexCount(realOutline);
+                var provinceVertices = VertexCount(chongqing!.GeometryJson);
+
+                Console.WriteLine($"  合并重庆全部 {allDistricts.Length} 个区县：" +
+                                  $"{before} → {after} 顶点（减少 {(before - after) * 100.0 / before:F1}%）");
+                Console.WriteLine($"  重庆市本身的轮廓：{provinceVertices} 顶点");
+                ok &= Check($"合并后顶点大幅减少（区县界线被消掉）", after < before / 2);
+                // 合并结果**不该**等于市级轮廓：市级那个几何是简化过的（590 顶点），
+                // 而 38 个区县拼出来保留了区县级的细节（1900 顶点）。正确的不变量是
+                // "在市级轮廓与区县之和之间"——比市级细，比简单相加粗。
+                ok &= Check("合并结果落在「市级轮廓」与「区县之和」之间",
+                            after > provinceVertices && after < before,
+                            $"市级 {provinceVertices} < 合并 {after} < 区县之和 {before}");
+                ok &= Check("真实外轮廓无集合外壳",
+                            !realOutline.Contains("GeometryCollection", StringComparison.Ordinal));
+            }
 
             // 用真实边界裁一块真实 DEM：找一个覆盖测试栅格范围的区县。
             var testRaster = RasterInfo.Read(dem);
@@ -250,6 +318,13 @@ internal static class BoundaryCommand
             {"type":"MultiPolygon","coordinates":[[[[105.410,28.560],[105.430,28.560],[105.430,28.580],[105.410,28.580],[105.410,28.560]]]]}
             """;
 
+        // 第二个区县与第一个**共用一条边**（东边界 105.430 重合）。
+        // 合并后公共边应当消失：10 个顶点 → 6 个。
+        // 若两个方块不接壤，合并结果不减顶点，就验不出 dissolve 到底有没有生效。
+        const string neighbour = """
+            {"type":"MultiPolygon","coordinates":[[[[105.430,28.560],[105.450,28.560],[105.450,28.580],[105.430,28.580],[105.430,28.560]]]]}
+            """;
+
         // 用 __GEOM__ 占位再替换，而不是内插字符串：JSON 里成串的 `}` 会和
         // $$""" 的转义规则打架（`}}` 被当成转义的花括号）。
         const string province = """
@@ -264,13 +339,46 @@ internal static class BoundaryCommand
             {"type":"FeatureCollection","name":"县","crs":{"type":"name","properties":{"name":"urn:ogc:def:crs:EPSG::4490"}},
              "features":[
                {"type":"Feature","properties":{"name":"巴南区","gb":"156500113"},"geometry":__GEOM__},
+               {"type":"Feature","properties":{"name":"九龙坡区","gb":"156500107"},"geometry":__NEIGHBOUR__},
                {"type":"Feature","properties":{"name":"省界"},"geometry":{"type":"MultiLineString","coordinates":[[[105.40,28.55],[105.45,28.60]]]}}
              ]}
             """;
 
         File.WriteAllText(Path.Combine(resources, "中国_省.geojson"), province.Replace("__GEOM__", square));
         File.WriteAllText(Path.Combine(resources, "中国_市.geojson"), city.Replace("__GEOM__", square));
-        File.WriteAllText(Path.Combine(resources, "中国_县.geojson"), county.Replace("__GEOM__", square));
+        File.WriteAllText(Path.Combine(resources, "中国_县.geojson"),
+            county.Replace("__GEOM__", square).Replace("__NEIGHBOUR__", neighbour));
+    }
+
+    /// <summary>数几何里的顶点总数。用 OGR 递归数，别用括号启发式——那种在简单方块上会数出 0。</summary>
+    private static int VertexCount(string geometryJson)
+    {
+        try
+        {
+            using var geometry = OSGeo.OGR.Ogr.CreateGeometryFromJson(geometryJson);
+            return geometry is null ? 0 : CountPoints(geometry);
+        }
+        catch (Exception)
+        {
+            return 0;
+        }
+    }
+
+    private static int CountPoints(OSGeo.OGR.Geometry geometry)
+    {
+        var type = geometry.GetGeometryType();
+        if (type is OSGeo.OGR.wkbGeometryType.wkbPoint
+                 or OSGeo.OGR.wkbGeometryType.wkbLineString
+                 or OSGeo.OGR.wkbGeometryType.wkbLinearRing)
+            return geometry.GetPointCount();
+
+        var total = 0;
+        for (var i = 0; i < geometry.GetGeometryCount(); i++)
+        {
+            using var child = geometry.GetGeometryRef(i);
+            if (child is not null) total += CountPoints(child);
+        }
+        return total;
     }
 
     private static bool Check(string label, string actual, string expected)

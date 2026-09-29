@@ -172,6 +172,23 @@ public static class BoundaryExport
     // ---------------------------------------------------------------- 几何
 
     /// <summary>
+    /// 剥掉"只含一个子几何"的 GeometryCollection 外壳，递归到最内层。
+    /// 含多个子几何的集合原样返回——那种情况下集合本身就是正确的结果。
+    /// </summary>
+    private static Geometry? Unwrap(Geometry geometry)
+    {
+        var current = geometry;
+        while (current.GetGeometryType() == wkbGeometryType.wkbGeometryCollection &&
+               current.GetGeometryCount() == 1)
+        {
+            var inner = current.GetGeometryRef(0);
+            if (inner is null) break;
+            current = inner;
+        }
+        return current.Clone();
+    }
+
+    /// <summary>
     /// 从一个几何里挑出所有多边形，合成一个 MultiPolygon。没有多边形则返回 null。
     ///
     /// MakeValid 的结果可能是 GeometryCollection（多边形 + 线 + 点的混合），
@@ -222,8 +239,18 @@ public static class BoundaryExport
         {
             var wkt = BuildGeometryCollection(features);
             using var collection = Ogr.CreateGeometryFromJson(wkt);
-            using var union = collection.Union(default);
-            return union?.ExportToJson([]);
+
+            // **必须用 UnaryUnion。** Union(other) 要的是二元并集，传 null 会抛异常——
+            // 而异常被下面的 catch 吞掉、退回几何集合，症状是"选了 dissolve 但产出里
+            // 还带着内部界线"，不报错，只是结果不对。这个坑实际踩过一次。
+            using var union = collection.UnaryUnion();
+            if (union is null || union.IsEmpty()) return null;
+
+            // Union 的结果可能仍被 GeometryCollection 包着（输入本身是集合时尤其如此）。
+            // 输给前端的应该是一个干净的面，不是"装着面的盒子"——壳对渲染无害，
+            // 但会让下游按 type 分支处理的代码走到意料之外的路径。
+            using var unwrapped = Unwrap(union);
+            return unwrapped?.ExportToJson([]);
         }
         catch (Exception)
         {

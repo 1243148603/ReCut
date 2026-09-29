@@ -169,6 +169,36 @@ python resources/fetch_boundaries.py --source tianditu --key 你的key
 
 ---
 
+## 当前结论（2026-09-29 实测，未打通）
+
+Key 申请下来了（应用 RECUT，控制台显示「服务器端」，Key `87c6…`），
+但**天地图网关不认这个类型**：
+
+```
+GET https://api.tianditu.gov.cn/v2/administrative?...&tk=87c6…
+→ 403 {"code":301013,"msg":"权限类型错误",
+       "resolve":"Key权限类型为:浏览器端，请使用浏览器端访问"}
+```
+
+已排除的可能：
+
+| 排除项 | 怎么排的 |
+|---|---|
+| 请求格式 | GET / POST 表单 / POST JSON 三种结果完全一致 |
+| 下发延迟 | 隔 45 秒重试 5 次（约 3 分钟）仍同 |
+| 接口写错 | 同一 Key 在 geocoder、v2/search、v2/administrative 上都是 301013 |
+| Key 无效 | 无效 Key 返回的是 `301001 不是key`，不是 301013 |
+| User-Agent | 自定义 UA 会被打成 500；换成浏览器 UA 后才是规范的 301013 |
+
+**没排除的**：IP 白名单留空、账号开发者类型（个人/企业）、天地图侧的
+配置下发。要接着试就从这三项入手，尤其是**先填上 IP 白名单**再重试。
+
+当前项目**继续使用 DataV.GeoAtlas**（数据已抓好并验收通过）。
+脚本的 `--source tianditu` 路径保留，将来 Key 可用了直接抓一遍即可换源，
+不用改代码。
+
+---
+
 ## 附：接口形态（已从官方文档核实）
 
 ```

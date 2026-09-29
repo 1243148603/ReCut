@@ -58,9 +58,10 @@ if (-not (Test-Path $ctbDir)) {
     throw "找不到 ctb 目录：$ctbDir（NFR-02 的自包含交付物，没有它装出来的程序跑不起来）"
 }
 
-$version = (Select-String -Path (Join-Path $cutmapDir 'src\CutMap.Core\CutMapInfo.cs') `
-    -Pattern 'Version\s*=\s*"([^"]+)"').Matches[0].Groups[1].Value
-if (-not $version) { throw '读不到版本号' }
+# 版本号的唯一来源是 Directory.Build.props（见该文件注释）。
+$version = (Select-String -Path (Join-Path $cutmapDir 'Directory.Build.props') `
+    -Pattern '<Version>([^<]+)</Version>').Matches[0].Groups[1].Value
+if (-not $version) { throw '读不到版本号（cutmap\Directory.Build.props）' }
 
 $stage = Join-Path $distDir "payload-$version"
 if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }

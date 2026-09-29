@@ -1,0 +1,49 @@
+<Project>
+
+  <!--
+    整个解决方案共享的构建设置。
+
+    MSBuild 会自动向上查找这个文件，四个 csproj 不用各自重复一遍。
+    放这里的两个理由：
+      1. 程序集元数据（产品名/公司/版权/版本）统一，将来加项目不会漏
+      2. **版本号只有这一处**——之前写死在 CutMapInfo.cs 里，
+         打包脚本再拿正则去抠，两处迟早对不上
+
+    版本号改了要同步改这里，不要改别处。CutMapInfo.Version 是运行时从程序集读的。
+  -->
+
+  <PropertyGroup>
+    <Version>0.1.0</Version>
+    <Product>CutMap</Product>
+    <AssemblyName Condition="'$(AssemblyName)' == ''">$(MSBuildProjectName)</AssemblyName>
+    <Company>CutMap</Company>
+    <Copyright>Copyright (c) 2026 CutMap contributors</Copyright>
+
+    <!-- 中文产品，别让编译器把警告文字按英文习惯截断 -->
+    <NeutralLanguage>zh-Hans</NeutralLanguage>
+
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <!--
+      分析级别用 latest，不用 latest-recommended。
+      后者会带出 132 条 CA1305"数字格式跟区域设置走"——而那些绝大多数是
+      **显示字符串**，本来就该跟区域走（中文界面下 223,495 带千分位是对的）。
+      真正要管的是"拼进命令行/路径/机器可读格式"的那几处，已经单独修了，
+      并在 .editorconfig 里把这条规则留给 Code 层。
+    -->
+    <AnalysisLevel>latest</AnalysisLevel>
+  </PropertyGroup>
+
+  <!--
+    目标平台只有 Windows x64（OUT-05 明确不支持非 Windows），所以 RID 与自包含统一给。
+    **条件是"可执行项目"而不是"目标框架含 -windows"**：CLI 是 net8.0（不带 -windows），
+    按框架名判断会让它掉回框架依赖，在没装 .NET 的机器上双击就报错。
+    类库（Core）不给——库设自包含没有意义，还会把运行时塞进引用它的项目。
+  -->
+  <PropertyGroup Condition="'$(OutputType)' == 'Exe' or '$(OutputType)' == 'WinExe'">
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+  </PropertyGroup>
+
+</Project>

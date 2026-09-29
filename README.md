@@ -46,6 +46,22 @@ powershell -ExecutionPolicy Bypass -File cutmap\pack-release.ps1     # 绿色版
 
 ---
 
+## 文档索引
+
+| 文档 | 给谁 |
+|---|---|
+| **本文件** | 所有人——这是什么、怎么跑起来 |
+| [docs/技术路线与交付.md](docs/技术路线与交付.md) | 要评估这个项目的人——选型理由、实施路线、交付清单、验收结论 |
+| [docs/开发与交接.md](docs/开发与交接.md) | 要改这个项目的人——架构、决策理由、**10 个踩过的坑**、怎么扩展 |
+| [docs/基线运行说明.md](docs/基线运行说明.md) | 要对照命令行做法的人——链路完整记录、教程 6 处勘误、gzip 部署陷阱 |
+| [docs/使用说明.md](docs/使用说明.md) | **要用这个软件的人——详细到每一步**：装、四步流程、只跑其中一步、部署、排障 |
+| [cutmap/README.md](cutmap/README.md) | 软件的构建与发布、无界面命令速查 |
+| [CHANGELOG.md](CHANGELOG.md) | 要对接的人——版本历史、验收结论、已知问题 |
+| [cutmap/THIRD-PARTY-NOTICES.txt](cutmap/THIRD-PARTY-NOTICES.txt) | 要合规审查的人——第三方组件与数据来源的许可 |
+| [resources/天地图-Key申请教程.md](resources/天地图-Key申请教程.md) | 想换回天地图数据源的人 |
+
+---
+
 ## 仓库里有什么
 
 ```
@@ -68,10 +84,9 @@ D:\Map\
 │                    逐层瓦片数、层级标定结论、一个标定样本）
 │                    完整的基线留档见 git 历史，说明见 docs\基线运行说明.md
 │
-├── docs\            项目文档
-│   ├── 技术路线与交付.md    **主线**：选型理由、实施路线、交付清单、验收结论
-│   ├── 开发与交接.md        架构、关键决策与理由、10 个踩过的坑、怎么扩展
-│   └── 基线运行说明.md      命令行链路的完整记录（含教程 6 处勘误、gzip 部署陷阱）
+├── docs\            项目文档（见上方「文档索引」）
+├── CHANGELOG.md     版本历史、验收结论、已知问题
+├── .editorconfig    代码与格式约定（换行由 .gitattributes 管，两处不重复）
 │
 ├── data\            数据（不进仓库，可由脚本重建）
 ├── serve.py         本地静态服务器——**查看瓦片必须用它**，见下
@@ -147,6 +162,10 @@ cd D:/Map && python serve.py --port 8080
 ---
 
 ## 许可
+
+> ⚠ **本项目的授权方式尚未确定。** 仓库里目前没有 `LICENSE` 文件——
+> 企业对接、二次分发前请先与项目负责人确认授权。
+> 下面是**第三方组件与数据**的许可，那些与项目自身的授权是两回事。
 
 见 [cutmap/THIRD-PARTY-NOTICES.txt](cutmap/THIRD-PARTY-NOTICES.txt)。要点：
 

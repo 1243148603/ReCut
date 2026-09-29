@@ -1,0 +1,57 @@
+# 编辑器与代码分析约定。
+#
+# 只写这个项目真正在意的几条。默认规则由 .NET SDK 的分析器给，
+# 这里只做两件事：① 钉住会被 git 到处改的格式；② 把几条关键规则提级/降级。
+#
+# 注意：换行与字符集不在这里管——那个由 .gitattributes 负责（见该文件的说明），
+# 两处都写会互相打架。
+
+root = true
+
+[*]
+charset = utf-8
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.{cs,csproj,props,targets}]
+indent_size = 4
+
+[*.{json,geojson,jsonc}]
+indent_size = 2
+
+[*.{md,markdown}]
+# Markdown 里的行尾空格是"硬换行"，不能自动去掉
+trim_trailing_whitespace = false
+
+[*.{ps1,psm1}]
+indent_size = 4
+# ⚠ 必须 UTF-8 **带 BOM**：Windows PowerShell 5.1 无 BOM 时按本地代码页解析，
+#   中文注释会被拆成乱码字节、引号配对错位。见 docs/开发与交接.md。
+
+[*.py]
+indent_size = 4
+
+# ---------------------------------------------------------------- C# 分析规则
+
+[*.cs]
+# 这几条是**真会出问题**的，提到 warning 以上，构建时能看见：
+dotnet_diagnostic.CA1305.severity = suggestion   # 数字格式跟区域走 ——
+#   显示字符串本来就该跟区域走，所以默认降级；但拼进命令行/路径/机器可读格式的
+#   那几处（如 ctb-tile 的 -s/-e 参数）必须显式用 InvariantCulture，已在代码里注明。
+dotnet_diagnostic.CA2007.severity = none         # ConfigureAwait —— 桌面应用没有同步上下文问题
+dotnet_diagnostic.CA1062.severity = none         # 公共 API 参数校验 —— 这是内部工具，不是公共库
+dotnet_diagnostic.IDE0060.severity = none        # 未使用的参数 —— 接口实现里常见，且注释已说明
+
+# 异步/释放相关保持默认级别（warning）：漏 Dispose 在桌面应用里会积少成多
+dotnet_diagnostic.CA2000.severity = warning
+dotnet_diagnostic.CA1001.severity = warning
+
+# 命名：本项目用中文注释 + 英文标识符，不做额外要求
+dotnet_diagnostic.IDE1006.severity = none
+
+csharp_style_namespace_declarations = file_scoped:warning
+csharp_style_var_for_built_in_types = false:suggestion
+csharp_style_expression_bodied_methods = when_on_single_line:suggestion
+dotnet_sort_system_directives_first = true

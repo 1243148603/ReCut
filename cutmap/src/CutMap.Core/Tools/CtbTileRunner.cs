@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -115,8 +116,19 @@ public static class CtbTileRunner
 
         var args = new List<string> { "-o", request.OutputDirectory };
         // 注意：-s/-e 才是层级；-m 是 --warp-memory（内存上限），教程 §5.3 写作最大级别是笔误。
-        if (request.StartZoom is { } s) { args.Add("-s"); args.Add(s.ToString()); }
-        if (request.EndZoom is { } e) { args.Add("-e"); args.Add(e.ToString()); }
+        // **必须用不变文化。** 这两个数字会被拼进 ctb-tile 的命令行，
+        // 在数字形状或分隔符不同的区域设置下可能拼出非 ASCII 的内容，
+        // 而 ctb-tile 是原生程序，解析不了。这类问题在开发机（中文/英文）上永远复现不了。
+        if (request.StartZoom is { } s)
+        {
+            args.Add("-s");
+            args.Add(s.ToString(CultureInfo.InvariantCulture));
+        }
+        if (request.EndZoom is { } e)
+        {
+            args.Add("-e");
+            args.Add(e.ToString(CultureInfo.InvariantCulture));
+        }
         args.Add(request.InputPath);
 
         var psi = new ProcessStartInfo

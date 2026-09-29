@@ -16,11 +16,8 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
-    <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
-    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-    <SelfContained>true</SelfContained>
     <AssemblyName>CutMap-Setup</AssemblyName>
     <!-- 安装器自己不需要 PDB，几百 MB 的载荷旁边再放符号文件没意义 -->
     <DebugType>none</DebugType>

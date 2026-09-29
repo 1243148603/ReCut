@@ -17,11 +17,8 @@
 
 **安装包**（推荐）
 
-```
-CutMap-0.1.0-Setup-win-x64.exe
-```
-
-双击即装，**不需要管理员权限**——装到 `%LOCALAPPDATA%\Programs\CutMap`，
+`CutMap-<版本>-Setup-win-x64.exe` —— 从发布渠道拿到，或自己打一份
+（见 §5）。双击即装，**不需要管理员权限**——装到 `%LOCALAPPDATA%\Programs\CutMap`，
 建开始菜单与桌面快捷方式，并在「设置 → 应用」里登记，可以从那里卸载。
 
 **绿色版**

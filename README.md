@@ -16,14 +16,19 @@
 
 ### 装
 
-```
-dist\CutMap-0.1.0-Setup-win-x64.exe
+安装包与绿色版 zip **不在仓库里**（二进制，且可由源码一条命令重建）。
+自己打一份：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File cutmap\pack-installer.ps1   # 安装包 exe
+powershell -ExecutionPolicy Bypass -File cutmap\pack-release.ps1     # 绿色版 zip
 ```
 
-双击即装，**不需要管理员权限**（装到 `%LOCALAPPDATA%\Programs\CutMap`），
-开始菜单与桌面会有快捷方式，可以从「设置 → 应用」卸载。
+产物落在 `dist\`。安装包双击即装，**不需要管理员权限**（装到
+`%LOCALAPPDATA%\Programs\CutMap`），开始菜单与桌面会有快捷方式，
+可以从「设置 → 应用」卸载。
 
-不用安装包的话，绿色版 zip 解压即用。
+> 手上已经有 `dist\CutMap-<版本>-Setup-win-x64.exe` 的话，直接双击那个。
 
 ### 用
 

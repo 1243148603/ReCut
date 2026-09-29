@@ -68,7 +68,7 @@
 提交后在应用列表里能看到该应用的 **Key**，形如：
 
 ```
-7e1f29296f533370f6a39dabf59fac15     ← 32 位十六进制
+7e1f…（已失效，此处不保留完整值）     ← 32 位十六进制
 ```
 
 这就是 `tk` 参数的值。
@@ -101,7 +101,7 @@ location /custom/search {
 3. 调用时带上两个参数：`tk=应用key` **和** `sk=安全密钥`
 
 ```bash
-export TIANDITU_KEY=7e1f29296f533370f6a39dabf59fac15
+export TIANDITU_KEY=你的32位key
 export TIANDITU_SK=你的安全密钥
 python resources/fetch_boundaries.py --source tianditu
 ```
@@ -145,7 +145,7 @@ python resources\fetch_boundaries.py --source tianditu
 把 Key 写进 `resources/.tianditu_key`（**已在 .gitignore 里**，不会进仓库）：
 
 ```
-7e1f29296f533370f6a39dabf59fac15
+7e1f…（已失效，此处不保留完整值）
 ```
 
 **方式三：命令行参数**

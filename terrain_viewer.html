@@ -3,60 +3,119 @@
 <head>
 <meta charset="utf-8">
 <title>地形瓦片预览</title>
-<!-- Cesium 打包进仓库（viewer/vendor/cesium/，约 13 MB）：不依赖 CDN，
-     断网也能开。defer：Cesium.js 有 5 MB，同步加载会把 HTML 解析整个挡住，
-     页面在下载完成前一片空白、也不给任何解释。
-     defer 让 body 先建出来，面板可以先显示进度；失败时 onerror 给出明确提示。 -->
+<!-- Cesium 打包进仓库（viewer/vendor/cesium/，约 13 MB）：不依赖 CDN，断网也能开。
+     defer：Cesium.js 有 5 MB，同步加载会把 HTML 解析整个挡住，页面在下载完成前
+     一片空白、也不给任何解释。defer 让 body 先建出来，界面可以先显示状态。 -->
 <script defer src="./viewer/vendor/cesium/Cesium.js" onerror="window.__cesiumFailed=true"></script>
 <link rel="stylesheet" href="./viewer/vendor/cesium/Widgets/widgets.css">
 <style>
   html, body, #cesiumContainer { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; }
+  body { font: 13px/1.6 "Microsoft YaHei UI", "Segoe UI", sans-serif; }
+
+  /* 左上信息卡：这一份瓦片集是什么、加载到哪一步了 */
+  #hud {
+    position: absolute; top: 12px; left: 12px; z-index: 999; max-width: 380px;
+    background: rgba(15,23,42,.82); color: #e2e8f0; border-radius: 10px;
+    padding: 12px 16px; box-shadow: 0 4px 18px rgba(0,0,0,.35);
+    backdrop-filter: blur(4px);
+  }
+  #hud-title { font-size: 15px; font-weight: 600; color: #f8fafc; }
+  #hud-meta { margin-top: 4px; color: #94a3b8; font-size: 12px; white-space: pre-line; }
+  #hud-status { margin-top: 8px; font-size: 12px; display: flex; align-items: center; gap: 6px; }
+  #hud-status .dot { width: 8px; height: 8px; border-radius: 50%; background: #facc15; flex: none; }
+  #hud-status.ok  .dot { background: #4ade80; }
+  #hud-status.err .dot { background: #f87171; }
+  #hud-status.ok  { color: #bbf7d0; }
+  #hud-status.err { color: #fecaca; }
+  #hud-status.dim { color: #cbd5e1; }
+
+  /* 左下控制条 */
+  #controls {
+    position: absolute; left: 12px; bottom: 12px; z-index: 999;
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    background: rgba(15,23,42,.82); color: #e2e8f0; border-radius: 10px;
+    padding: 10px 14px; box-shadow: 0 4px 18px rgba(0,0,0,.35);
+  }
+  #controls label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #cbd5e1; }
+  #controls input[type=range] { width: 130px; }
+  #controls select, #controls button {
+    background: #1e293b; color: #e2e8f0; border: 1px solid #334155;
+    border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer;
+  }
+  #controls button:hover, #controls select:hover { background: #273449; }
+
+  /* 诊断面板：默认不出现，?debug=1 或点「诊断」才展开 */
   #panel {
-    position: absolute; top: 10px; left: 10px; z-index: 999;
-    background: rgba(0,0,0,.82); color: #eee; font: 12px/1.55 Consolas, monospace;
-    padding: 10px 14px; border-radius: 6px; width: 470px; max-height: 92vh; overflow: auto;
+    position: absolute; top: 12px; right: 12px; z-index: 999;
+    background: rgba(0,0,0,.85); color: #eee; font: 12px/1.55 Consolas, monospace;
+    padding: 10px 14px; border-radius: 10px; width: 460px; max-height: 88vh; overflow: auto;
     white-space: pre-wrap; word-break: break-all;
   }
-  /* 不带 ?debug=1 时：面板只剩右下角那个垂直夸张滑块，日志区整块不显示，
-     底色/边框也去掉，看起来就是一个干净的 3D 视图。 */
-  #panel.compact {
-    background: none; padding: 0; border-radius: 0; width: 210px;
-    max-height: none; overflow: visible; color: #fff;
-    text-shadow: 0 1px 3px rgba(0,0,0,.9);
-  }
-  #panel.compact #log { display: none; }
+  #panel.hidden { display: none; }
   #panel b { color: #7dd3fc; }
   .ok   { color: #86efac; }
   .warn { color: #fde047; }
   .err  { color: #fca5a5; }
   .dim  { color: #94a3b8; }
-  #panel label { display: block; margin-top: 7px; color: #cbd5e1; }
-  #panel input[type=range] { width: 100%; }
   hr { border: 0; border-top: 1px solid #475569; margin: 9px 0; }
 </style>
 </head>
 <body>
 <div id="cesiumContainer"></div>
-<div id="panel"><div id="log">正在加载 Cesium.js（约 5 MB，需联网）…</div></div>
+
+<div id="hud">
+  <div id="hud-title">地形瓦片预览</div>
+  <div id="hud-meta">正在读取 layer.json…</div>
+  <div id="hud-status"><span class="dot"></span><span id="hud-status-text">初始化</span></div>
+</div>
+
+<div id="controls">
+  <label>垂直夸张 <input id="exaggeration" type="range" min="1" max="5" step="0.5" value="2">
+    <span id="exaggeration-text">2.0x</span></label>
+  <label>底图
+    <select id="basemap">
+      <option value="local">本地（离线）</option>
+      <option value="none">关闭</option>
+      <option value="osm">OSM（在线）</option>
+    </select></label>
+  <button id="fly-home">回到范围</button>
+  <button id="toggle-debug">诊断</button>
+</div>
+
+<div id="panel" class="hidden"><div id="log">正在加载 Cesium.js…</div></div>
 
 <script>
 // defer 的脚本在 DOMContentLoaded 之前执行，所以这里等 DOMContentLoaded
 // 就一定能拿到已就绪的 Cesium，也不会有解析顺序问题。
 window.addEventListener('DOMContentLoaded', async function () {
-// 诊断面板默认收起，开发时看到的是干净的 3D 视图。排查问题加 ?debug=1 展开：
-// 里面有瓦片探测、请求汇总、数据正确性自检这几样证据。日志照样会写进
-// console，所以不带参数也不会丢信息。
-const DEBUG = new URLSearchParams(location.search).has('debug');
-const panel = document.getElementById('panel');
+const params = new URLSearchParams(location.search);
+const DEBUG = params.has('debug');
+
 const log = document.getElementById('log');
-log.innerHTML = '';
-if (!DEBUG) panel.classList.add('compact');
+const panel = document.getElementById('panel');
+const hudTitle = document.getElementById('hud-title');
+const hudMeta = document.getElementById('hud-meta');
+const hudStatus = document.getElementById('hud-status');
+const hudStatusText = document.getElementById('hud-status-text');
+
+const setStatus = (text, kind) => {
+  hudStatusText.textContent = text;
+  hudStatus.className = kind || '';
+};
+const say = (msg, cls) => {
+  log.innerHTML += `\n<span class="${cls || ''}">${msg}</span>`;
+  console.log('[terrain]', msg);
+};
+const h = (t) => {
+  log.innerHTML += `\n<hr><b>${t}</b>`;
+  console.log('[terrain] ---', t);
+};
+if (DEBUG) panel.classList.remove('hidden');
 
 // ── 配置 ────────────────────────────────────────────────────────────────
 // 瓦片集路径：?tiles=<相对路径>（默认仓库里那一份）。
 // 范围与层级**从该瓦片集的 layer.json 读**——写死的话换个区域镜头还是飞重庆，
 // 自检项还会对着不存在的瓦片报假失败（比不报还耗人）。
-const params = new URLSearchParams(location.search);
 const TERRAIN_URL = params.get('tiles') || './data/outputs/cesium_terrain/';
 
 // Cesium 会把相对路径解析成绝对 URL 再发请求，所以记录和比较都要用
@@ -67,6 +126,7 @@ const shorten = (u) => String(u).replace(TERRAIN_BASE, '').replace(location.orig
 // 兜底值：layer.json 读不到时用；?bounds=w,s,e,n / ?maxzoom=N 可以显式覆盖。
 const DEFAULT_BOUNDS = [105.3, 28.1, 110.2, 32.2];
 const DEFAULT_MAXZOOM = 14;
+let LAYER = { name: '地形瓦片', description: '', version: '', attribution: '' };
 let LAYER_BOUNDS = DEFAULT_BOUNDS;
 let MAXZOOM = DEFAULT_MAXZOOM;
 
@@ -85,20 +145,17 @@ async function loadLayerConfig() {
       const j = await r.json();
       if (Array.isArray(j.bounds) && j.bounds.length === 4) LAYER_BOUNDS = j.bounds;
       if (Number.isFinite(j.maxzoom)) MAXZOOM = j.maxzoom;
+      LAYER = {
+        name: j.name || LAYER.name,
+        description: j.description || '',
+        version: j.version || '',
+        attribution: j.attribution || '',
+      };
       return true;
     }
   } catch (e) { /* 读不到就用兜底范围 */ }
   return false;
 }
-
-const say = (msg, cls) => {
-  log.innerHTML += `\n<span class="${cls || ''}">${msg}</span>`;
-  console.log('[terrain]', msg);
-};
-const h = (t) => {
-  log.innerHTML += `\n<hr><b>${t}</b>`;
-  console.log('[terrain] ---', t);
-};
 
 // ── 数据自检（不依赖 Cesium，先跑） ──────────────────────────────────────
 /** 数据自检：取「瓦片里真正存着的高程」，逐点列出。
@@ -108,9 +165,9 @@ const h = (t) => {
  * 黔江差 1017 m。那是渲染状态，不能拿来判断数据对不对。
  * 改成直接取覆盖该点的最深层瓦片、解出那一个像素：与相机无关，可重复。
  *
- * **不再内嵌某一区域的期望高程。** 采样点按 layer.json 的 bounds 生成
- * （中心 + 四角内缩 12.5%），报的是"瓦片值"，要核对请与源 DEM 同点对比；
- * 换区域时不会因为"参考值是重庆的"而假报警。
+ * **不内嵌任何区域的期望高程。** 采样点按 layer.json 的 bounds 生成
+ * （中心 + 四角内缩 12.5%），报的是"瓦片值"，核对请与源 DEM 同点对比；
+ * 换区域时不会因为"参考值是别处的"而假报警。
  *
  * 放在最前面还有一个原因：这段只碰本机瓦片，不碰 Cesium。加载失败时，
  * 页面照样能回答「数据本身对不对」。
@@ -163,38 +220,29 @@ async function decodeTileHeight(lon, lat) {
   return { h: raw / 5 - 1000, tile: `${TILE_Z}/${tx}/${ty}`, px, py };
 }
 
-async function sampleHeights() {
-  h('数据自检：各点瓦片高程（点按 bounds 生成）');
+/** 逐点解瓦片高程。verbose=false 时只汇总一行到状态栏（正常浏览用）。 */
+async function sampleHeights(verbose) {
+  if (verbose) h('数据自检：各点瓦片高程（点按 bounds 生成）');
+  let ok = 0, failed = 0, sample = [];
   for (const [name, lon, lat] of CHECKS) {
     try {
       const r = await decodeTileHeight(lon, lat);
-      say(`${name}  ${lon.toFixed(3)}E ${lat.toFixed(3)}N  ${r.tile} px(${r.px},${r.py})  ` +
-          `瓦片 ${r.h.toFixed(1)} m`, 'ok');
+      ok++;
+      if (sample.length < 3) sample.push(`${r.h.toFixed(0)} m`);
+      if (verbose) {
+        say(`${name}  ${lon.toFixed(3)}E ${lat.toFixed(3)}N  ${r.tile} px(${r.px},${r.py})  ` +
+            `瓦片 ${r.h.toFixed(1)} m`, 'ok');
+      }
     } catch (e) {
-      say(`${name}  ${lon.toFixed(3)}E ${lat.toFixed(3)}N  解码失败: ${e.message}`, 'err');
+      failed++;
+      if (verbose) say(`${name}  ${lon.toFixed(3)}E ${lat.toFixed(3)}N  解码失败: ${e.message}`, 'err');
     }
   }
-  say('这里只列"瓦片里存的高程"：核对请与源 DEM 在同点比较（差值是重采样保真度）。', 'dim');
-  say('换任意点也可同法核对：先按上面规则算出瓦片，再与 gdallocationinfo 对照。', 'dim');
-}
-
-// 配置（bounds / maxzoom）与采样点先就绪：**数据自检不依赖 Cesium**，
-// 要在它之前跑完——Cesium 加载失败时，页面至少还能回答「数据本身对不对」。
-const configLoaded = await loadLayerConfig();
-buildChecks();
-TILE_Z = MAXZOOM;
-
-await sampleHeights();
-
-// Cesium 加载失败也能走到这里：上面的自检已经把「数据对不对」答完了。
-if (typeof Cesium === 'undefined') {
-  h('Cesium.js 加载失败');
-  say('本页从 ./viewer/vendor/cesium/Cesium.js 加载（随仓库分发）。', 'err');
-  say(window.__cesiumFailed ? '脚本请求本身失败了（文件缺失，或用了 file:// 直开）。'
-                            : '脚本未能执行。', 'err');
-  say('要看到 3D，请用仓库自带的服务器：python serve.py，再从 http:// 打开本页。', 'warn');
-  say('上面那节自检只读本机瓦片，不受影响 —— 数据本身是好的。', 'ok');
-  return;
+  if (verbose) {
+    say('这里只列"瓦片里存的高程"：核对请与源 DEM 在同点比较（差值是重采样保真度）。', 'dim');
+    say('换任意点也可同法核对：先按上面规则算出瓦片，再与 gdallocationinfo 对照。', 'dim');
+  }
+  return { ok, failed, sample };
 }
 
 // ── 关键诊断：记录每个 .terrain 请求的真实状态码和 URL ────────────────────
@@ -262,7 +310,7 @@ function reportTiles() {
   if (!ok && missing) say('全部 404：Cesium 请求的路径与实际目录结构不匹配。', 'err');
 }
 
-// ── 自检：绕过 Cesium，直接探测已知瓦片 ─────────────────────────────────
+// ── 自检：绕过 Cesium，直接探测已知瓦片（仅诊断模式） ────────────────────
 // 这一步能定位最隐蔽的失败模式：瓦片本身是对的，但服务器没声明
 // Content-Encoding: gzip，浏览器就不会解压，Cesium 拿压缩字节去建
 // Uint16Array 会直接抛 RangeError，表现为「200 但地形永远停在 0 级」。
@@ -270,7 +318,7 @@ async function probe() {
   h('自检：直接探测瓦片');
   let gzipBug = false;
 
-  // 最深层那块按 bounds 中心算出来——写死一个重庆的瓦片坐标，换区域后
+  // 最深层那块按 bounds 中心算出来——写死一个别处的瓦片坐标，换区域后
   // 它是**合法的 404**，自检会报"失败"（假报警比不报警更耗人）。
   const [bw, bs, be, bn] = LAYER_BOUNDS;
   const cLon = (bw + be) / 2, cLat = (bs + bn) / 2;
@@ -294,13 +342,13 @@ async function probe() {
 
       const b = await r.arrayBuffer();
       const u8 = new Uint8Array(b);
-      const isGzip = u8[0] === 0x1f && u8[1] === 0x8b;
+      const gzipped = u8[0] === 0x1f && u8[1] === 0x8b;
 
       if (!name.endsWith('.terrain')) {
         say(`200  ${name}  ${b.byteLength}B  ${note}`, 'ok');
         continue;
       }
-      if (isGzip) {
+      if (gzipped) {
         // 浏览器把 gzip 原始字节交给了 JS，说明它没有做透明解压 ——
         // 即响应缺少 Content-Encoding: gzip。这正是渲染失败的原因。
         gzipBug = true;
@@ -315,17 +363,41 @@ async function probe() {
 
   if (gzipBug) {
     h('诊断：瓦片被 gzip 压缩，但服务器没有声明 Content-Encoding');
-    say('ctb-tile 输出的是 gzip 压缩瓦片（CTB README 原文："This creates', 'err');
-    say('gzipped terrain tiles"）。Cesium 不在 JS 里解压，它依赖浏览器', 'err');
+    say('ctb-tile 输出的是 gzip 压缩瓦片。Cesium 不在 JS 里解压，它依赖浏览器', 'err');
     say('完成透明解压 —— 而这只有当响应带 Content-Encoding: gzip 时才会发生。', 'err');
-    say('于是 Cesium 用 86 字节的压缩流去执行', 'err');
-    say('    new Uint16Array(buffer, 0, 65*65)   // 需要 8450 字节', 'err');
-    say('直接抛 RangeError，瓦片全部加载失败，globe 永远停在 0 级。', 'err');
-    say('', '');
     say('修法：用本仓库自带的服务器启动，它会带上这个响应头：', 'warn');
-    say('    python serve.py --port 8080', 'warn');
+    say('    python serve.py --tileset <瓦片目录>', 'warn');
     say('不要用 python -m http.server：它不会为 .terrain 加该响应头。', 'warn');
   }
+}
+
+// ── 配置就绪：先把自检跑完，Cesium 加载失败时页面照样能回答"数据对不对" ──
+const configLoaded = await loadLayerConfig();
+buildChecks();
+TILE_Z = MAXZOOM;
+const [BW, BS, BE, BN] = LAYER_BOUNDS;
+const CENTRE = { lon: (BW + BE) / 2, lat: (BS + BN) / 2 };
+
+hudTitle.textContent = LAYER.name;
+hudMeta.textContent =
+  (LAYER.description ? LAYER.description + '\n' : '') +
+  `范围 [${BW.toFixed(3)}, ${BS.toFixed(3)}, ${BE.toFixed(3)}, ${BN.toFixed(3)}]  zoom 0-${MAXZOOM}` +
+  (LAYER.version ? `  v${LAYER.version}` : '') +
+  (configLoaded ? '' : '\n（未读到 layer.json，用兜底范围）');
+setStatus('正在检查瓦片数据…', '');
+
+const selfCheck = await sampleHeights(DEBUG);
+
+if (typeof Cesium === 'undefined') {
+  panel.classList.remove('hidden');
+  h('Cesium.js 加载失败');
+  say('本页从 ./viewer/vendor/cesium/Cesium.js 加载（随仓库分发）。', 'err');
+  say(window.__cesiumFailed ? '脚本请求本身失败了（文件缺失，或用了 file:// 直开）。'
+                            : '脚本未能执行。', 'err');
+  say('要看到 3D，请用仓库自带的服务器：python serve.py，再从 http:// 打开本页。', 'warn');
+  say('上面那节自检只读本机瓦片，不受影响 —— 数据本身是好的。', 'ok');
+  setStatus(`3D 未加载（Cesium.js 缺失）· 数据自检 ${selfCheck.ok}/${CHECKS.length} 点可解码`, 'err');
+  return;
 }
 
 // ── 主流程 ──────────────────────────────────────────────────────────────
@@ -336,6 +408,32 @@ const viewer = new Cesium.Viewer('cesiumContainer', {
   infoBox: false, selectionIndicator: false,
 });
 viewer.scene.verticalExaggeration = 2.0;
+
+if (DEBUG) {
+  await probe();
+  h('加载地形');
+}
+
+/** 底图：默认 Cesium 自带的 Natural Earth II（随 vendor 分发，纯本地离线）。
+ *  ?basemap=none 关掉；?basemap=osm 换成在线 OSM（需能访问 tile.openstreetmap.org）。 */
+async function setBasemap(kind) {
+  viewer.imageryLayers.removeAll();
+  if (kind === 'none') { say('底图已关闭。', 'dim'); return; }
+  try {
+    if (kind === 'osm') {
+      viewer.imageryLayers.addImageryProvider(
+        new Cesium.OpenStreetMapImageryProvider({ url: 'https://tile.openstreetmap.org/' }));
+      say('已叠加 OSM 底图（在线；国内网络可能连不上）', 'ok');
+    } else {
+      const imagery = await Cesium.TileMapServiceImageryProvider.fromUrl(
+        Cesium.buildModuleUrl('Assets/Textures/NaturalEarthII'));
+      viewer.imageryLayers.addImageryProvider(imagery);
+      say('已叠加本地底图：Cesium 自带 Natural Earth II（0–2 级，离线可用）', 'ok');
+    }
+  } catch (e) {
+    say(`底图加载失败（不影响地形）：${e.message || e}`, 'warn');
+  }
+}
 
 async function loadTerrain() {
   // heightmap-1.0 下 Cesium 会强制 requestWaterMask = true、忽略
@@ -356,56 +454,33 @@ async function loadTerrain() {
   return provider;
 }
 
-(async function main() {
-  // 配置与采样点在上面（Cesium 检查之前）已经就绪，这里直接用。
-  const [bw, bs, be, bn] = LAYER_BOUNDS;
-  const centre = { lon: (bw + be) / 2, lat: (bs + bn) / 2 };
-
-  log.innerHTML = `<b>地形瓦片预览</b>\n源: ${TERRAIN_URL}\n` +
-                  `范围 [${bw}, ${bs}, ${be}, ${bn}]  zoom 0-${MAXZOOM}` +
-                  (configLoaded ? '' : '  （未读到 layer.json，用兜底范围）');
-
-  await probe();
-
-  h('加载地形');
-  try {
-    await loadTerrain();
-    say('layer.json 已解析，provider ready', 'ok');
-  } catch (e) {
-    say(`地形 provider 创建失败: ${e.message || e}`, 'err');
-    return;
-  }
-
-  // 底图：默认用 **Cesium 自带的 Natural Earth II**（随 vendor 分发，纯本地、离线可用）。
-  // 没有影像时地形是一片单色，看起来像"没加载出地图"——这就是默认开它的原因。
-  //   ?basemap=none  关掉
-  //   ?basemap=osm   换成在线 OSM（需能访问 tile.openstreetmap.org，国内常连不上）
-  const basemap = (params.get('basemap') ?? 'local').toLowerCase();
-  if (basemap === 'none' || basemap === 'off' || basemap === '0') {
-    say('底图已关闭（?basemap=local 开回离线底图）。', 'dim');
-  } else {
-    try {
-      if (basemap === 'osm' || basemap === '1') {
-        viewer.imageryLayers.addImageryProvider(
-          new Cesium.OpenStreetMapImageryProvider({ url: 'https://tile.openstreetmap.org/' }));
-        say('已叠加 OSM 底图（在线；国内网络可能连不上）', 'ok');
-      } else {
-        // 0–2 级的世界影像：够看清陆地和国界轮廓；更深层级由 Cesium 拉伸顶图。
-        const imagery = await Cesium.TileMapServiceImageryProvider.fromUrl(
-          Cesium.buildModuleUrl('Assets/Textures/NaturalEarthII'));
-        viewer.imageryLayers.addImageryProvider(imagery);
-        say('已叠加本地底图：Cesium 自带 Natural Earth II（0–2 级，离线可用）', 'ok');
-      }
-    } catch (e) {
-      say(`底图加载失败（不影响地形）：${e.message || e}`, 'warn');
-    }
-  }
-
+function flyHome() {
   viewer.camera.flyTo({
-    destination: Cesium.Cartesian3.fromDegrees(centre.lon, centre.lat, 180000),
+    destination: Cesium.Cartesian3.fromDegrees(CENTRE.lon, CENTRE.lat, 180000),
     orientation: { heading: 0, pitch: Cesium.Math.toRadians(-55), roll: 0 },
     duration: 0,
   });
+}
+
+(async function main() {
+  try {
+    await loadTerrain();
+    say('layer.json 已解析，provider ready', 'ok');
+    setStatus('地形已加载，正在取瓦片…', '');
+  } catch (e) {
+    say(`地形 provider 创建失败: ${e.message || e}`, 'err');
+    setStatus(`地形加载失败：${e.message || e}`, 'err');
+    return;
+  }
+
+  const basemapKind = (params.get('basemap') ?? 'local').toLowerCase();
+  const select = document.getElementById('basemap');
+  select.value = ['none', 'off', '0'].includes(basemapKind) ? 'none'
+               : ['osm', '1'].includes(basemapKind) ? 'osm' : 'local';
+  await setBasemap(select.value);
+  select.addEventListener('change', () => setBasemap(select.value));
+
+  flyHome();
 
   // 瓦片请求结束后汇总。
   // 必须等到「确实忙过、再归于空闲」才能汇总：相机就位前
@@ -417,6 +492,7 @@ async function loadTerrain() {
     if (n > 0) {
       sawActivity = true;
       settle = null;
+      setStatus(`正在取瓦片（队列 ${n}）…`, '');
     } else if (sawActivity) {
       settle = setTimeout(finish, 2000);   // 归零后再等一拍，防止反复启停
     }
@@ -427,38 +503,35 @@ async function loadTerrain() {
   function finish() {
     if (finished) return;
     finished = true;
-    h('瓦片请求汇总');
-    reportTiles();
-
-    // 「有没有往下细分」的判断依据：成功取回的瓦片数量。0 级只有 2 块，
-    // 所以成功数超过 2 就说明 globe 确实在往深层细分。
-    const okTiles = tileLog.filter((t) => t.status === 200).length;
-    if (okTiles > 2) {
-      say(`成功取回 ${okTiles} 块瓦片，已细分到深层。` +
-          (viewer.scene.globe.tilesLoaded ? '地形加载完成。' : ''), 'ok');
-      say('拖动/滚轮可查看起伏，下方可调垂直夸张。', 'ok');
-    } else {
-      say(`只成功取回 ${okTiles} 块瓦片（0 级共 2 块），globe 没有往深层细分。` +
-          `若上方自检标出了 Content-Encoding 问题，先按那里的提示换服务器。`, 'err');
+    if (DEBUG) {
+      h('瓦片请求汇总');
+      reportTiles();
+      sampleHeights(true);
     }
-    sampleHeights();
-    addControls();
-  }
-})();
 
-function addControls() {
-  h('显示');
-  const l = document.createElement('label');
-  l.textContent = '垂直夸张：2.0x';
-  const s = document.createElement('input');
-  s.type = 'range'; s.min = '1'; s.max = '5'; s.step = '0.5'; s.value = '2';
-  s.oninput = () => {
-    viewer.scene.verticalExaggeration = Number(s.value);
-    l.textContent = `垂直夸张：${Number(s.value).toFixed(1)}x`;
-  };
-  l.appendChild(s);
-  panel.appendChild(l);
-}
+    const okTiles = tileLog.filter((t) => t.status === 200).length;
+    const dataNote = `数据自检 ${selfCheck.ok}/${CHECKS.length} 点可解码`;
+    if (okTiles > 2) {
+      setStatus(`地形加载完成 · ${okTiles} 块瓦片 · ${dataNote}`, 'ok');
+      say(`成功取回 ${okTiles} 块瓦片，已细分到深层。`, 'ok');
+    } else {
+      setStatus(`只有 ${okTiles} 块瓦片取回（应更多）· ${dataNote}`, 'err');
+      say(`只成功取回 ${okTiles} 块瓦片（0 级共 2 块），globe 没有往深层细分。`, 'err');
+    }
+  }
+
+  // 控制条
+  const slider = document.getElementById('exaggeration');
+  const sliderText = document.getElementById('exaggeration-text');
+  slider.addEventListener('input', () => {
+    viewer.scene.verticalExaggeration = Number(slider.value);
+    sliderText.textContent = Number(slider.value).toFixed(1) + 'x';
+  });
+  document.getElementById('fly-home').addEventListener('click', flyHome);
+  document.getElementById('toggle-debug').addEventListener('click', () => {
+    panel.classList.toggle('hidden');
+  });
+})();
 
 // 暴露到 window，方便在 F12 控制台里继续排查（也便于自动化验证）：
 //   viewer.scene.globe.getHeight(...)   取任意点高程

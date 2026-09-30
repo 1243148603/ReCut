@@ -61,6 +61,10 @@ public sealed class MainForm : ThemedForm
         var newMosaic = new ToolStripButton("新建任务…") { DisplayStyle = ToolStripItemDisplayStyle.Text };
         newMosaic.Click += (_, _) => NewTask();
 
+        // 一键生产：拼接裁剪 → 切片 → 打包 一次收参数、串行跑完（复用队列，不另起调度）。
+        var pipeline = new ToolStripButton("一键生产…") { DisplayStyle = ToolStripItemDisplayStyle.Text };
+        pipeline.Click += (_, _) => NewPipeline();
+
         // 下载是工具条上的独立入口（PRD FR-06，不在新建任务向导内）。
         var download = new ToolStripButton("下载 DEM 数据…") { DisplayStyle = ToolStripItemDisplayStyle.Text };
         download.Click += (_, _) => NewDownloadTask();
@@ -89,6 +93,7 @@ public sealed class MainForm : ThemedForm
         _queueButton.Click += (_, _) => ToggleQueue();
 
         toolbar.Items.Add(newMosaic);
+        toolbar.Items.Add(pipeline);
         toolbar.Items.Add(download);
         toolbar.Items.Add(new ToolStripSeparator());
         toolbar.Items.Add(_pauseButton);
@@ -357,6 +362,9 @@ public sealed class MainForm : ThemedForm
             _pump.Post(() =>
             {
                 UpdateJobRow(job);
+                // 一键生产的链路：这一环没成功，后面的不用再试了。
+                if (job.ChainId is { } chain && job.Status is JobStatus.Failed or JobStatus.Cancelled)
+                    SkipChainRemainder(chain);
                 _current = null;
                 _cancelButton.Enabled = false;
                 _pauseButton.Enabled = false;
@@ -372,6 +380,64 @@ public sealed class MainForm : ThemedForm
     }
 
     /// <summary>任务进终态时落一条历史（FR-09）。取消与移除的区别就在这里：取消写，移除不写。</summary>
+    /// <summary>
+    /// 一键生产：一个对话框收齐三段参数，然后按序入队
+    /// 拼接裁剪 → 切片 → 打包。三个任务共享一个 ChainId；任一环失败/取消，
+    /// 剩下的一律跳过（见 <see cref="SkipChainRemainder"/>）。
+    /// </summary>
+    private void NewPipeline()
+    {
+        using var dialog = new PipelineForm();
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+
+        var chain = Guid.NewGuid().ToString("N")[..8];
+        var tif = dialog.AlgoTifPath;
+        var tiles = dialog.TilesDirectory;
+        AppendLog($"一键生产：输出到 {dialog.RootDirectory}（中间产物路径自动推导）");
+
+        Enqueue(new MosaicJob
+        {
+            InputPaths = dialog.InputPaths,
+            OutputPath = tif,
+            Target = dialog.Target,
+            Boundaries = dialog.Boundaries,
+            ChainId = chain,
+        });
+        Enqueue(new SliceJob
+        {
+            InputPath = tif,
+            OutputDirectory = tiles,
+            MaxZoom = null,
+            ChainId = chain,
+        });
+        Enqueue(new PackageJob
+        {
+            OutputDirectory = dialog.RootDirectory,
+            TilesDirectory = tiles,
+            AlgoTifPath = tif,
+            ZipTiles = dialog.ZipTiles,
+            ZipAlgo = dialog.ZipAlgo,
+            LayerName = dialog.LayerName,
+            LayerDescription = dialog.LayerDescription,
+            LayerVersion = dialog.LayerVersion,
+            ChainId = chain,
+        });
+    }
+
+    /// <summary>一键生产的上游没成功时，把同链还在排队的任务标成"已跳过"。</summary>
+    private void SkipChainRemainder(string chainId)
+    {
+        foreach (var pending in _pending
+                     .Where(j => j.ChainId == chainId && j.Status == JobStatus.Pending)
+                     .ToArray())
+        {
+            pending.Status = JobStatus.Cancelled;
+            pending.StatusDetail = "上游失败，已跳过";
+            UpdateJobRow(pending);
+            AppendLog($"已跳过 [{pending.TypeName}] {pending.Display}（一键生产的上游环节没成功）");
+        }
+    }
+
     private void RecordHistory(Job job, DateTimeOffset startedAt)
     {
         if (job.Status == JobStatus.Pending) return;

@@ -79,6 +79,7 @@ internal static class Program
             "pack" => (Form)new PackageForm(prefill, second, third),
             "choose" => new TaskChooserForm(),
             // --outside：把目标挪到输入之外，验证"真缺口仍然被拦住"（负向）。
+            "pipeline" => new PipelineForm(),
             "mosaic" => new MosaicForm(prefill is null ? null : [prefill], null, null,
                 args.Contains("--outside", StringComparer.OrdinalIgnoreCase)
                     ? new TaskPreset { Id = "outside", Name = "负向", Bounds = [106.3, 29.1, 111.2, 33.2] }
@@ -140,6 +141,7 @@ internal static class Program
             ("切片", () => (Form)new SliceForm()),
             ("拼接裁剪", () => (Form)new MosaicForm()),
             ("打包 / 导出", () => (Form)new PackageForm()),
+            ("一键生产", () => (Form)new PipelineForm()),
             ("下载 DEM", () => (Form)new DownloadForm()),
             ("下载源管理", () => (Form)new SourceEditorForm(new SourceStore())),
             ("行政区划选择", () => (Form)new BoundaryPickerForm(BoundaryStore.Locate())),

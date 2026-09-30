@@ -66,6 +66,15 @@ public abstract class Job
     /// <summary>任务参数的 json，用于历史回填与重跑（FR-09）。由子类提供。</summary>
     public abstract string ParametersJson { get; }
 
+    /// <summary>
+    /// 「一键生产」链路的标识：同一批自动串起来的任务共享一个 id。
+    ///
+    /// 链路里**任一环失败/取消，主窗口会跳过该链剩下的任务**——否则切片会去读
+    /// 一个没被产出的 tif、打包再去读不存在的瓦片，一串报错糊到用户脸上，
+    /// 而真正的原因只有第一条。
+    /// </summary>
+    public string? ChainId { get; init; }
+
     /// <summary>取消用。切片与拼接都是单进程/gdal 内部线程，取消即中断，不涉及进程树。</summary>
     public CancellationTokenSource Cancellation { get; } = new();
 

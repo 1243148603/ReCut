@@ -52,7 +52,8 @@ public static class DeployReadme
         sb.AppendLine("并用 URL 里的 ?tiles= 指向它。");
         sb.AppendLine();
         sb.AppendLine("预览页的镜头、层级、采样点与自检项**全部从 layer.json 读**，");
-        sb.AppendLine("所以换任何区域/瓦片集都不需要改页面；Cesium 随仓库分发，断网也能开。");
+        sb.AppendLine("所以换任何区域/瓦片集都不需要改页面；Cesium 与一张世界底图都随仓库分发，");
+        sb.AppendLine("断网也能开（底图是 0–2 级的 Natural Earth II，只够看轮廓；精细影像由前端配）。");
         sb.AppendLine("带 ?debug=1 可展开诊断面板（瓦片请求状态、各点高程自检）。");
         sb.AppendLine();
         sb.AppendLine("⚠ 必须让服务器声明 Content-Encoding: gzip（否则地形永远不显示）");

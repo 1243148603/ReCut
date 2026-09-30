@@ -376,21 +376,29 @@ async function loadTerrain() {
     return;
   }
 
-  // 底图默认关：它要连 tile.openstreetmap.org，断网/内网时只会拖慢并报错；
-  // 地形本身不依赖它。要看底图加 ?basemap=1。
-  if (params.has('basemap')) {
-    try {
-      viewer.imageryLayers.addImageryProvider(
-        new Cesium.OpenStreetMapImageryProvider({ url: 'https://tile.openstreetmap.org/' }));
-      say('已叠加 OSM 底图', 'ok');
-    } catch (e) {
-      say('底图加载失败（不影响地形）', 'warn');
-    }
+  // 底图：默认用 **Cesium 自带的 Natural Earth II**（随 vendor 分发，纯本地、离线可用）。
+  // 没有影像时地形是一片单色，看起来像"没加载出地图"——这就是默认开它的原因。
+  //   ?basemap=none  关掉
+  //   ?basemap=osm   换成在线 OSM（需能访问 tile.openstreetmap.org，国内常连不上）
+  const basemap = (params.get('basemap') ?? 'local').toLowerCase();
+  if (basemap === 'none' || basemap === 'off' || basemap === '0') {
+    say('底图已关闭（?basemap=local 开回离线底图）。', 'dim');
   } else {
-    say('底图默认不加载：无影像时地形是一片单色（看起来像"没有地图"）。', 'dim');
-    say('要看影像：URL 加 &basemap=1（拉 OSM，需能访问 tile.openstreetmap.org；',
-        'dim');
-    say('国内网络常常连不上，这时请用前端项目自己的影像。', 'dim');
+    try {
+      if (basemap === 'osm' || basemap === '1') {
+        viewer.imageryLayers.addImageryProvider(
+          new Cesium.OpenStreetMapImageryProvider({ url: 'https://tile.openstreetmap.org/' }));
+        say('已叠加 OSM 底图（在线；国内网络可能连不上）', 'ok');
+      } else {
+        // 0–2 级的世界影像：够看清陆地和国界轮廓；更深层级由 Cesium 拉伸顶图。
+        const imagery = await Cesium.TileMapServiceImageryProvider.fromUrl(
+          Cesium.buildModuleUrl('Assets/Textures/NaturalEarthII'));
+        viewer.imageryLayers.addImageryProvider(imagery);
+        say('已叠加本地底图：Cesium 自带 Natural Earth II（0–2 级，离线可用）', 'ok');
+      }
+    } catch (e) {
+      say(`底图加载失败（不影响地形）：${e.message || e}`, 'warn');
+    }
   }
 
   viewer.camera.flyTo({

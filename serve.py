@@ -122,6 +122,24 @@ class Server(http.server.ThreadingHTTPServer):
     allow_reuse_address = True
 
 
+def find_tilesets(root, max_depth=4):
+    """找出 root 下所有含 layer.json 的目录（瓦片集），供预览页的 ?tiles= 用。
+
+    Cesium 的入口就是 layer.json，所以"哪个目录是瓦片集"不需要用户解释。
+    限制深度并跳过 .git/node_modules：在一个大仓库里全盘扫会很慢。
+    """
+    found = []
+    root_depth = root.rstrip(os.sep).count(os.sep)
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in (".git", "node_modules")]
+        if dirpath.count(os.sep) - root_depth >= max_depth:
+            dirnames[:] = []
+        if "layer.json" in filenames:
+            found.append(dirpath)
+            dirnames[:] = []
+    return sorted(found)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[2])
     ap.add_argument("--port", type=int, default=8080)
@@ -129,12 +147,30 @@ def main():
                     help="interface to bind (default 127.0.0.1, local only)")
     ap.add_argument("--directory", default=os.path.dirname(os.path.abspath(__file__)),
                     help="root to serve (default: this script's directory)")
+    ap.add_argument("--tileset", default=None,
+                    help="要预览的瓦片集目录（含 layer.json）；默认自动发现")
     args = ap.parse_args()
 
     root = os.path.abspath(args.directory)
     if not os.path.isdir(root):
         print(f"error: not a directory: {root}", file=sys.stderr)
         return 2
+
+    # 选一个瓦片集给预览 URL 用：--tileset 指定优先，否则自动发现。
+    tileset = None
+    if args.tileset:
+        tileset = os.path.abspath(args.tileset)
+        if not os.path.exists(os.path.join(tileset, "layer.json")):
+            print(f"warning: {tileset} 里没有 layer.json，预览页会退回默认路径",
+                  file=sys.stderr)
+    else:
+        found = find_tilesets(root)
+        if found:
+            tileset = found[0]
+            if len(found) > 1:
+                print(f"发现 {len(found)} 个瓦片集，默认用第一个（--tileset 可指定）：")
+                for t in found:
+                    print("    " + os.path.relpath(t, root).replace(os.sep, "/"))
 
     handler = functools.partial(TerrainHandler, directory=root)
     try:
@@ -145,9 +181,19 @@ def main():
               file=sys.stderr)
         return 1
 
+    # 预览 URL 带上 ?tiles=：不指定的话页面用默认路径（仓库里那份），
+    # 换区域时不用改 HTML。
+    import urllib.parse
+    query = ""
+    if tileset:
+        rel = os.path.relpath(tileset, root).replace(os.sep, "/")
+        query = "?" + urllib.parse.urlencode({"tiles": rel + "/", "debug": "1"})
+
     print(f"serving {root}")
-    print(f"  viewer : http://{args.bind}:{args.port}/terrain_viewer.html")
-    print(f"  terrain: http://{args.bind}:{args.port}/data/outputs/cesium_terrain/")
+    print(f"  viewer : http://{args.bind}:{args.port}/terrain_viewer.html{query}")
+    if tileset:
+        print(f"  tileset: {os.path.relpath(tileset, root).replace(os.sep, '/')}"
+              "   （换个瓦片集用 --tileset，或改 URL 里的 ?tiles=）")
     print("  .terrain responses carry Content-Encoding: gzip (logged as [gzip])")
     print("Ctrl-C to stop.")
     try:

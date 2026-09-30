@@ -2,13 +2,13 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<title>重庆地形瓦片预览 — D:\Map</title>
-<!-- defer：Cesium.js 有 5 MB，同步加载会把 HTML 解析整个挡住，页面在下载
-     完成前一片空白、也不给任何解释（CDN 慢或被墙时最容易误判成"地形坏了"）。
+<title>地形瓦片预览</title>
+<!-- Cesium 打包进仓库（viewer/vendor/cesium/，约 13 MB）：不依赖 CDN，
+     断网也能开。defer：Cesium.js 有 5 MB，同步加载会把 HTML 解析整个挡住，
+     页面在下载完成前一片空白、也不给任何解释。
      defer 让 body 先建出来，面板可以先显示进度；失败时 onerror 给出明确提示。 -->
-<script defer src="https://cdn.jsdelivr.net/npm/cesium@1.128.0/Build/Cesium/Cesium.js"
-        onerror="window.__cesiumFailed=true"></script>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cesium@1.128.0/Build/Cesium/Widgets/widgets.css">
+<script defer src="./viewer/vendor/cesium/Cesium.js" onerror="window.__cesiumFailed=true"></script>
+<link rel="stylesheet" href="./viewer/vendor/cesium/Widgets/widgets.css">
 <style>
   html, body, #cesiumContainer { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; }
   #panel {
@@ -53,17 +53,43 @@ log.innerHTML = '';
 if (!DEBUG) panel.classList.add('compact');
 
 // ── 配置 ────────────────────────────────────────────────────────────────
-// 与 data/outputs/cesium_terrain/layer.json 保持一致：
-//   bounds [105.3, 28.1, 110.2, 32.2]  ->  中心 107.75E / 30.15N
-//   maxzoom 14
-const TERRAIN_URL = './data/outputs/cesium_terrain/';
-const WORLD_CENTER = { lon: 107.75, lat: 30.15 };
-const MAXZOOM = 14;
+// 瓦片集路径：?tiles=<相对路径>（默认仓库里那一份）。
+// 范围与层级**从该瓦片集的 layer.json 读**——写死的话换个区域镜头还是飞重庆，
+// 自检项还会对着不存在的瓦片报假失败（比不报还耗人）。
+const params = new URLSearchParams(location.search);
+const TERRAIN_URL = params.get('tiles') || './data/outputs/cesium_terrain/';
 
 // Cesium 会把相对路径解析成绝对 URL 再发请求，所以记录和比较都要用
 // 解析后的绝对形式，否则相对路径 replace 不掉，面板里会是一长串完整 URL。
 const TERRAIN_BASE = new URL(TERRAIN_URL, location.href).href;
 const shorten = (u) => String(u).replace(TERRAIN_BASE, '').replace(location.origin, '');
+
+// 兜底值：layer.json 读不到时用；?bounds=w,s,e,n / ?maxzoom=N 可以显式覆盖。
+const DEFAULT_BOUNDS = [105.3, 28.1, 110.2, 32.2];
+const DEFAULT_MAXZOOM = 14;
+let LAYER_BOUNDS = DEFAULT_BOUNDS;
+let MAXZOOM = DEFAULT_MAXZOOM;
+
+async function loadLayerConfig() {
+  const q = params.get('bounds');
+  if (q) {
+    const v = q.split(',').map(Number);
+    if (v.length === 4 && v.every(Number.isFinite)) LAYER_BOUNDS = v;
+  }
+  const z = Number(params.get('maxzoom'));
+  if (Number.isFinite(z) && z > 0) MAXZOOM = z;
+
+  try {
+    const r = await fetch(`${TERRAIN_BASE}layer.json`, { cache: 'no-store' });
+    if (r.ok) {
+      const j = await r.json();
+      if (Array.isArray(j.bounds) && j.bounds.length === 4) LAYER_BOUNDS = j.bounds;
+      if (Number.isFinite(j.maxzoom)) MAXZOOM = j.maxzoom;
+      return true;
+    }
+  } catch (e) { /* 读不到就用兜底范围 */ }
+  return false;
+}
 
 const say = (msg, cls) => {
   log.innerHTML += `\n<span class="${cls || ''}">${msg}</span>`;
@@ -75,28 +101,35 @@ const h = (t) => {
 };
 
 // ── 数据自检（不依赖 Cesium，先跑） ──────────────────────────────────────
-/** 数据正确性自检：把「瓦片里真正存着的高程」和「源 DEM 的高程」对起来。
+/** 数据自检：取「瓦片里真正存着的高程」，逐点列出。
  *
  * 这里刻意不用 globe.getHeight。它只反映相机视野内已经加载的瓦片，视野外的点
  * 会退回粗层祖先瓦片去插值 —— 实测（2026-09-28，无头 Edge）中部偏西差 309 m、
  * 黔江差 1017 m。那是渲染状态，不能拿来判断数据对不对。
- * 改成直接取覆盖该点的 z14 瓦片、解出那一个像素：与相机无关，可重复。
+ * 改成直接取覆盖该点的最深层瓦片、解出那一个像素：与相机无关，可重复。
  *
- * 参考值由 GDAL 在「该像素中心」的经纬度上取自源 DEM，所以两者指的是同一个
- * 位置，差值就是重采样保真度（这四点都在 12 m 以内）。
+ * **不再内嵌某一区域的期望高程。** 采样点按 layer.json 的 bounds 生成
+ * （中心 + 四角内缩 12.5%），报的是"瓦片值"，要核对请与源 DEM 同点对比；
+ * 换区域时不会因为"参考值是重庆的"而假报警。
  *
- * 放在最前面还有一个原因：这段只碰本机瓦片，不碰 CDN。Cesium 加载失败时，
+ * 放在最前面还有一个原因：这段只碰本机瓦片，不碰 Cesium。加载失败时，
  * 页面照样能回答「数据本身对不对」。
  */
-const TILE_Z = MAXZOOM;   // 14，layer.json 的 maxzoom
+let TILE_Z = MAXZOOM;     // 由 loadLayerConfig() 后的 MAXZOOM 决定
 const TILE_N = 65;        // ctb-tile 对 terrain 瓦片的默认尺寸；Cesium 的 heightmapWidth 默认也是 65
-const CHECKS = [
-  // 名称        经度     纬度     源DEM参考值(m)
-  ['中部偏西',  107.75,  30.15,  399.2],
-  ['西北部',    106.25,  31.65,  375.2],
-  ['东北部',    109.45,  31.25,  541.7],
-  ['西南部',    105.55,  28.35,  424.4],
-];
+let CHECKS = [];          // [名称, 经度, 纬度]，按 bounds 生成
+
+function buildChecks() {
+  const [w, s, e, n] = LAYER_BOUNDS;
+  const dx = (e - w) * 0.125, dy = (n - s) * 0.125;
+  CHECKS = [
+    ['中部',   (w + e) / 2, (s + n) / 2],
+    ['西北部', w + dx, n - dy],
+    ['东北部', e - dx, n - dy],
+    ['西南部', w + dx, s + dy],
+    ['东南部', e - dx, s + dy],
+  ];
+}
 
 const isGzip = (b) => b.byteLength > 1 &&
   new Uint8Array(b)[0] === 0x1f && new Uint8Array(b)[1] === 0x8b;
@@ -131,33 +164,36 @@ async function decodeTileHeight(lon, lat) {
 }
 
 async function sampleHeights() {
-  h('数据正确性自检：瓦片值 vs 源 DEM');
-  for (const [name, lon, lat, ref] of CHECKS) {
+  h('数据自检：各点瓦片高程（点按 bounds 生成）');
+  for (const [name, lon, lat] of CHECKS) {
     try {
       const r = await decodeTileHeight(lon, lat);
-      const d = r.h - ref;
-      say(`${name}  ${lon}E ${lat}N  ${r.tile} px(${r.px},${r.py})  ` +
-          `瓦片 ${r.h.toFixed(1)} m   源DEM ${ref.toFixed(1)} m   ` +
-          `差 ${d >= 0 ? '+' : ''}${d.toFixed(1)} m`,
-          Math.abs(d) < 20 ? 'ok' : 'warn');
+      say(`${name}  ${lon.toFixed(3)}E ${lat.toFixed(3)}N  ${r.tile} px(${r.px},${r.py})  ` +
+          `瓦片 ${r.h.toFixed(1)} m`, 'ok');
     } catch (e) {
-      say(`${name}  ${lon}E ${lat}N  解码失败: ${e.message}`, 'err');
+      say(`${name}  ${lon.toFixed(3)}E ${lat.toFixed(3)}N  解码失败: ${e.message}`, 'err');
     }
   }
-  say('差值来自重采样（源 DEM 30 m 网格 → 瓦片 65×65），不是数据错误。', 'dim');
+  say('这里只列"瓦片里存的高程"：核对请与源 DEM 在同点比较（差值是重采样保真度）。', 'dim');
   say('换任意点也可同法核对：先按上面规则算出瓦片，再与 gdallocationinfo 对照。', 'dim');
 }
+
+// 配置（bounds / maxzoom）与采样点先就绪：**数据自检不依赖 Cesium**，
+// 要在它之前跑完——Cesium 加载失败时，页面至少还能回答「数据本身对不对」。
+const configLoaded = await loadLayerConfig();
+buildChecks();
+TILE_Z = MAXZOOM;
 
 await sampleHeights();
 
 // Cesium 加载失败也能走到这里：上面的自检已经把「数据对不对」答完了。
 if (typeof Cesium === 'undefined') {
   h('Cesium.js 加载失败');
-  say('本页从 cdn.jsdelivr.net 加载 Cesium 1.128（约 5 MB），需要联网。', 'err');
-  say(window.__cesiumFailed ? '脚本请求本身失败了（网络不通或被拦截）。'
+  say('本页从 ./viewer/vendor/cesium/Cesium.js 加载（随仓库分发）。', 'err');
+  say(window.__cesiumFailed ? '脚本请求本身失败了（文件缺失，或用了 file:// 直开）。'
                             : '脚本未能执行。', 'err');
+  say('要看到 3D，请用仓库自带的服务器：python serve.py，再从 http:// 打开本页。', 'warn');
   say('上面那节自检只读本机瓦片，不受影响 —— 数据本身是好的。', 'ok');
-  say('3D 显示需联网；完全离线的机器可把 Cesium 放到本地再改 <script> 的 src。', 'dim');
   return;
 }
 
@@ -234,11 +270,19 @@ async function probe() {
   h('自检：直接探测瓦片');
   let gzipBug = false;
 
+  // 最深层那块按 bounds 中心算出来——写死一个重庆的瓦片坐标，换区域后
+  // 它是**合法的 404**，自检会报"失败"（假报警比不报警更耗人）。
+  const [bw, bs, be, bn] = LAYER_BOUNDS;
+  const cLon = (bw + be) / 2, cLat = (bs + bn) / 2;
+  const nx = 2 ** (MAXZOOM + 1), ny = 2 ** MAXZOOM;
+  const tx = Math.floor((cLon + 180) / 360 * nx);
+  const ty = Math.floor((cLat + 90) / 180 * ny);
   const cases = [
-    ['layer.json',     TERRAIN_URL + 'layer.json',              '元数据'],
-    ['0/1/0.terrain',  TERRAIN_URL + '0/1/0.terrain',           'zoom0 应有'],
-    ['0/0/0.terrain',  TERRAIN_URL + '0/0/0.terrain',           'zoom0 不应有，预期 404'],
-    ['14/25968/10752', TERRAIN_URL + '14/25968/10752.terrain',  '最深级'],
+    ['layer.json', TERRAIN_URL + 'layer.json', '元数据'],
+    ['0/1/0.terrain', TERRAIN_URL + '0/1/0.terrain', 'zoom0 应有'],
+    ['0/0/0.terrain', TERRAIN_URL + '0/0/0.terrain', 'zoom0 不应有，预期 404'],
+    [`${MAXZOOM}/${tx}/${ty}.terrain`, `${TERRAIN_URL}${MAXZOOM}/${tx}/${ty}.terrain`,
+     '最深级（bounds 中心）'],
   ];
 
   for (const [name, url, note] of cases) {
@@ -313,8 +357,13 @@ async function loadTerrain() {
 }
 
 (async function main() {
-  log.innerHTML = `<b>重庆地形瓦片预览</b>\n源: ${TERRAIN_URL}\n` +
-                  `范围 ${WORLD_CENTER.lon}E ${WORLD_CENTER.lat}N  zoom 0-${MAXZOOM}`;
+  // 配置与采样点在上面（Cesium 检查之前）已经就绪，这里直接用。
+  const [bw, bs, be, bn] = LAYER_BOUNDS;
+  const centre = { lon: (bw + be) / 2, lat: (bs + bn) / 2 };
+
+  log.innerHTML = `<b>地形瓦片预览</b>\n源: ${TERRAIN_URL}\n` +
+                  `范围 [${bw}, ${bs}, ${be}, ${bn}]  zoom 0-${MAXZOOM}` +
+                  (configLoaded ? '' : '  （未读到 layer.json，用兜底范围）');
 
   await probe();
 
@@ -327,16 +376,22 @@ async function loadTerrain() {
     return;
   }
 
-  try {
-    viewer.imageryLayers.addImageryProvider(
-      new Cesium.OpenStreetMapImageryProvider({ url: 'https://tile.openstreetmap.org/' }));
-    say('已叠加 OSM 底图', 'ok');
-  } catch (e) {
-    say('底图加载失败（不影响地形）', 'warn');
+  // 底图默认关：它要连 tile.openstreetmap.org，断网/内网时只会拖慢并报错；
+  // 地形本身不依赖它。要看底图加 ?basemap=1。
+  if (params.has('basemap')) {
+    try {
+      viewer.imageryLayers.addImageryProvider(
+        new Cesium.OpenStreetMapImageryProvider({ url: 'https://tile.openstreetmap.org/' }));
+      say('已叠加 OSM 底图', 'ok');
+    } catch (e) {
+      say('底图加载失败（不影响地形）', 'warn');
+    }
+  } else {
+    say('底图默认不加载（要底图加 ?basemap=1）——断网时地形照样能看。', 'dim');
   }
 
   viewer.camera.flyTo({
-    destination: Cesium.Cartesian3.fromDegrees(WORLD_CENTER.lon, WORLD_CENTER.lat, 180000),
+    destination: Cesium.Cartesian3.fromDegrees(centre.lon, centre.lat, 180000),
     orientation: { heading: 0, pitch: Cesium.Math.toRadians(-55), roll: 0 },
     duration: 0,
   });

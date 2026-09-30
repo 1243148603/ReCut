@@ -61,7 +61,11 @@ dist/
 Thumbs.db
 desktop.ini
 
-# 注意 baseline/ 与 ctb/ 都不在忽略之列。
+# 注意 baseline/、ctb/ 与 viewer/vendor/ 都不在忽略之列。
 #   baseline/ 是 M0-M2 的对拍基准（dem_gdalinfo.json、tile_counts.txt、
 #            golden/、maxzoom_calibration/），丢了就没法验收。
 #   ctb/      是 NFR-02 的交付物，重建需要 VS2022 + conda，不是随手可得。
+#   viewer/vendor/cesium/  预览页用的 CesiumJS 1.128（约 13 MB，从 npm/jsdelivr
+#            取一次入库）。理由是**断网可用的预览页是交付形态的一部分**：
+#            只要走 CDN，内网/离线环境就开不了 3D，而预览页是验证产物的第一手段。
+#            版本与来源记在 docs/通用化说明.md。

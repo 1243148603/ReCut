@@ -61,6 +61,12 @@ dist/
 Thumbs.db
 desktop.ini
 
+# --- 令牌（绝不可入库）------------------------------------------------------
+# 预览页的 Cesium Ion 访问令牌。写成本地文件而不是写进 HTML：
+# 这个仓库会推送到 gitee，令牌进了提交历史就等于公开（删掉也留在历史里）。
+# 启用方法：把 viewer/ion.local.js.example 复制成 viewer/ion.local.js 填上自己的令牌。
+viewer/ion.local.js
+
 # 注意 baseline/、ctb/ 与 viewer/vendor/ 都不在忽略之列。
 #   baseline/ 是 M0-M2 的对拍基准（dem_gdalinfo.json、tile_counts.txt、
 #            golden/、maxzoom_calibration/），丢了就没法验收。

@@ -6,6 +6,9 @@
 <!-- Cesium 打包进仓库（viewer/vendor/cesium/，约 13 MB）：不依赖 CDN，断网也能开。
      defer：Cesium.js 有 5 MB，同步加载会把 HTML 解析整个挡住，页面在下载完成前
      一片空白、也不给任何解释。defer 让 body 先建出来，界面可以先显示状态。 -->
+<!-- 本机令牌（不入库，.gitignore 忽略）。没有这个文件时页面照常工作，
+     只是底图里不会出现 Cesium Ion 那一项。 -->
+<script src="./viewer/ion.local.js" onerror="void 0"></script>
 <script defer src="./viewer/vendor/cesium/Cesium.js" onerror="window.__cesiumFailed=true"></script>
 <link rel="stylesheet" href="./viewer/vendor/cesium/Widgets/widgets.css">
 <style>
@@ -76,6 +79,7 @@
     <select id="basemap">
       <option value="local">本地（离线）</option>
       <option value="none">关闭</option>
+      <option value="ion">Cesium Ion 影像（Bing，在线）</option>
       <option value="osm">OSM（在线）</option>
     </select></label>
   <button id="fly-home">回到范围</button>
@@ -401,6 +405,11 @@ if (typeof Cesium === 'undefined') {
 }
 
 // ── 主流程 ──────────────────────────────────────────────────────────────
+// Cesium Ion 令牌来自本地文件 viewer/ion.local.js（不入库）。设在这里、
+// 任何 Ion 资产被用到之前。
+const ION_READY = Boolean(window.CESIUM_ION_TOKEN);
+if (ION_READY) Cesium.Ion.defaultAccessToken = window.CESIUM_ION_TOKEN;
+
 const viewer = new Cesium.Viewer('cesiumContainer', {
   baseLayer: false,
   animation: false, timeline: false, baseLayerPicker: false, geocoder: false,
@@ -420,7 +429,13 @@ async function setBasemap(kind) {
   viewer.imageryLayers.removeAll();
   if (kind === 'none') { say('底图已关闭。', 'dim'); return; }
   try {
-    if (kind === 'osm') {
+    if (kind === 'ion') {
+      if (!ION_READY) { say('没有 Cesium Ion 令牌（viewer/ion.local.js），跳过。', 'warn'); return; }
+      // asset 2 = Bing Maps Aerial（Cesium Ion 的在线卫星影像）。
+      const imagery = await Cesium.IonImageryProvider.fromAssetId(2);
+      viewer.imageryLayers.addImageryProvider(imagery);
+      say('已叠加 Cesium Ion 影像（Bing 卫星图，在线）', 'ok');
+    } else if (kind === 'osm') {
       viewer.imageryLayers.addImageryProvider(
         new Cesium.OpenStreetMapImageryProvider({ url: 'https://tile.openstreetmap.org/' }));
       say('已叠加 OSM 底图（在线；国内网络可能连不上）', 'ok');
@@ -475,8 +490,13 @@ function flyHome() {
 
   const basemapKind = (params.get('basemap') ?? 'local').toLowerCase();
   const select = document.getElementById('basemap');
+  // 没有令牌时把 Ion 那一项标灰，别让用户选了才发现不能用。
+  const ionOption = select.querySelector('option[value="ion"]');
+  if (!ION_READY) { ionOption.disabled = true; ionOption.textContent = 'Cesium Ion 影像（无令牌）'; }
   select.value = ['none', 'off', '0'].includes(basemapKind) ? 'none'
-               : ['osm', '1'].includes(basemapKind) ? 'osm' : 'local';
+               : ['osm', '1'].includes(basemapKind) ? 'osm'
+               : basemapKind === 'ion' ? 'ion'
+               : 'local';
   await setBasemap(select.value);
   select.addEventListener('change', () => setBasemap(select.value));
 

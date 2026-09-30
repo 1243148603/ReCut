@@ -1,0 +1,4 @@
+// 复制成 ion.local.js，填上自己的 Cesium Ion 访问令牌（该文件已被 .gitignore 忽略）。
+// 申请：https://ion.cesium.com/tokens —— 只需要 assets:read 权限。
+// 页面会用它加载 Cesium Ion 的在线影像（如 Bing 卫星图，asset 2）。
+window.CESIUM_ION_TOKEN = '';

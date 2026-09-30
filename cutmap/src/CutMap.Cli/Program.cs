@@ -23,7 +23,7 @@ internal static class Program
 
             case "warp-gate":
             {
-                var repo = args.Length > 1 ? args[1] : @"D:\Map";
+                var repo = args.Length > 1 ? args[1] : RepoRoot.Locate();
                 var outPath = args.Length > 2
                     ? args[2]
                     : Path.Combine(repo, "cutmap", "_gate", "chongqing_dem.tif");
@@ -31,23 +31,26 @@ internal static class Program
             }
 
             case "ctb-gate":
-                return Gates.CtbGate(args.Length > 1 ? args[1] : @"D:\Map");
+                return Gates.CtbGate(args.Length > 1 ? args[1] : RepoRoot.Locate());
 
             case "grid-gate":
-                return Gates.TileGridGate(args.Length > 1 ? args[1] : @"D:\Map");
+                return Gates.TileGridGate(args.Length > 1 ? args[1] : RepoRoot.Locate());
 
             case "verify":
             {
+                var repo = RepoRoot.Locate();
                 var tiles = args.Length > 1
                     ? args[1]
-                    : @"D:\Map\cutmap\_gate\slice_full";
-                var dem = args.Length > 2 ? args[2] : @"D:\Map\cutmap\_gate\warp\chongqing_dem.tif";
+                    : Path.Combine(repo, "cutmap", "_gate", "slice_full");
+                var dem = args.Length > 2
+                    ? args[2]
+                    : Path.Combine(repo, "cutmap", "_gate", "warp", "chongqing_dem.tif");
                 return VerifyCommand.Run(tiles, dem);
             }
 
             case "warp-vector":
                 return VectorWarpCommand.Run(
-                    @"D:\Map",
+                    RepoRoot.Locate(),
                     args.Length > 1 ? args[1] : "156500000",
                     args.Length > 2 ? args[2] : null);
 
@@ -56,12 +59,12 @@ internal static class Program
                 return DownloadCommand.CustomSourceAsync(args[1]).GetAwaiter().GetResult();
 
             case "boundary":
-                return BoundaryCommand.Run(@"D:\Map");
+                return BoundaryCommand.Run(RepoRoot.Locate());
 
             case "download":
             {
                 var limit = OptionValue(args, "--limit") is { } l && int.TryParse(l, out var n) ? n : 1;
-                return DownloadCommand.RunAsync(@"D:\Map", args.Contains("--network"), limit)
+                return DownloadCommand.RunAsync(RepoRoot.Locate(), args.Contains("--network"), limit)
                                      .GetAwaiter().GetResult();
             }
 
@@ -77,14 +80,14 @@ internal static class Program
 
             case "package":
                 return PackageCommand.Run(
-                    @"D:\Map",
+                    RepoRoot.Locate(),
                     args.Length > 1 ? args[1] : null,
                     args.Length > 2 ? args[2] : null,
                     args.Length > 3 ? args[3] : null);
 
             case "warp":
                 return MosaicCommand.Run(
-                    @"D:\Map",
+                    RepoRoot.Locate(),
                     args.Length > 1 ? args[1] : null,
                     args.Length > 2 ? args[2] : null,
                     args.Length > 3 ? args[3] : null);
@@ -92,7 +95,7 @@ internal static class Program
             case "slice":
             {
                 if (args.Length < 2) return Usage();
-                var repo = @"D:\Map";
+                var repo = RepoRoot.Locate();
                 int? maxZoom = args.Length > 3 ? int.Parse(args[3]) : null;
                 return SliceCommand.Run(repo, args[1], args.Length > 2 ? args[2] : null, maxZoom);
             }

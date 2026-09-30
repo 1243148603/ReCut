@@ -2,6 +2,7 @@ using System.Globalization;
 using CutMap.Core.Download;
 using CutMap.Core.Geo;
 using CutMap.Core.Store;
+using CutMap.Core.Terrain;
 using CutMap.Core.Vector;
 using CutMap.App.Ui;
 
@@ -49,7 +50,7 @@ public sealed class DownloadForm : ThemedForm
     {
         Text = "下载 DEM 数据";
         StartPosition = FormStartPosition.CenterParent;
-        FormLayout.FitToContent(this, new Size(760, 400));
+        FormLayout.FitToContent(this, new Size(760, 430));   // 430：区域那一栏多了"范围来源"按钮行
         MinimumSize = new Size(680, 380);
         Font = new Font("Microsoft YaHei UI", 9F);
 
@@ -69,7 +70,9 @@ public sealed class DownloadForm : ThemedForm
         }
         if (initialSaveDir is not null) _saveDir.Text = initialSaveDir;
 
-        ApplyArea(initialArea ?? new BBox(105.3, 28.1, 110.2, 32.2), "重庆全域");
+        // 不再预填重庆：范围留空，由用户从预设 / 已有 DEM / 已有瓦片 / 边界 / 手填里来定
+        // （换到别的省市时，不必先把重庆的坐标删掉）。
+        if (initialArea is not null) ApplyArea(initialArea.Value, "历史预填");
     }
 
     private void BuildLayout()
@@ -113,7 +116,8 @@ public sealed class DownloadForm : ThemedForm
         areaRow.Controls.Add(new Label { Text = "预设：", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 0);
         var preset = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 140 };
         foreach (var p in new PresetStore().ClipPresets) preset.Items.Add(p);
-        preset.SelectedIndex = 0;
+        // 不预选：预选第一项会立刻把它的范围填进四框（等于又绑回了某个默认区域）。
+        preset.SelectedIndex = -1;
         preset.SelectedIndexChanged += (_, _) =>
         {
             if (preset.SelectedItem is ClipPreset p) ApplyArea(p.Box, p.Name);
@@ -149,7 +153,20 @@ public sealed class DownloadForm : ThemedForm
         _preview.Padding = new Padding(0, 4, 0, 0);
         areaRow.Controls.Add(_preview, 0, 1);
         areaRow.SetColumnSpan(_preview, 10);
-        areaRow.RowCount = 3;
+
+        // 范围来源：已有 DEM（多选，取并集）与已有瓦片目录反推。
+        // 预设、按行政区划、手填本来就在上面两行。
+        var boundsSourceRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 4, 0, 0) };
+        var fromDem = new Button { Text = "用已有 DEM 范围…", Width = 132 };
+        fromDem.Click += (_, _) => FillFromDemFiles();
+        var fromTiles = new Button { Text = "用已有瓦片…", Width = 110 };
+        fromTiles.Click += (_, _) => FillFromTiles();
+        boundsSourceRow.Controls.Add(fromDem);
+        boundsSourceRow.Controls.Add(fromTiles);
+        areaRow.Controls.Add(boundsSourceRow, 0, 3);
+        areaRow.SetColumnSpan(boundsSourceRow, 9);
+        areaRow.RowCount = 4;
+
         areaBox.Controls.Add(areaRow);
         root.Controls.Add(areaBox, 1, 0);
 
@@ -211,6 +228,47 @@ public sealed class DownloadForm : ThemedForm
         ApplyAreaTo(_area, area);
         _ = name;
         UpdatePreview();
+    }
+
+    /// <summary>多选已有 DEM，取它们的并集范围（"想补下这一片"的常见起手式）。</summary>
+    private void FillFromDemFiles()
+    {
+        using var dialog = new OpenFileDialog
+        {
+            Title = "选择已有 DEM（可多选）",
+            Filter = "GeoTIFF (*.tif;*.tiff)|*.tif;*.tiff|所有文件 (*.*)|*.*",
+            Multiselect = true,
+        };
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+
+        var infos = new List<RasterInfo>();
+        foreach (var path in dialog.FileNames)
+        {
+            try { infos.Add(RasterInfo.Read(path)); }
+            catch (RasterException) { /* 读不了的跳过，能读几个算几个 */ }
+        }
+        if (Coverage.Union(infos) is not { } union)
+        {
+            _status.Text = "选中的文件都读不出范围。";
+            _status.ForeColor = Color.Firebrick;
+            return;
+        }
+        ApplyArea(union, "选中 DEM 的并集");
+    }
+
+    /// <summary>从已有瓦片目录反推范围（与打包用的是同一份扫描实现）。</summary>
+    private void FillFromTiles()
+    {
+        using var dialog = new FolderBrowserDialog { Description = "选择已有瓦片目录（z/x/y.terrain）" };
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+
+        if (LayerJson.InspectTiles(dialog.SelectedPath) is not { } coverage)
+        {
+            _status.Text = "这个目录里没有 .terrain 瓦片。";
+            _status.ForeColor = Color.Firebrick;
+            return;
+        }
+        ApplyArea(coverage.Bounds, "已有瓦片的范围");
     }
 
     private void ReloadSources()

@@ -1,6 +1,7 @@
 using System.Globalization;
 using CutMap.Core.Geo;
 using CutMap.Core.Store;
+using CutMap.Core.Terrain;
 using CutMap.Core.Vector;
 using CutMap.App.Ui;
 
@@ -67,10 +68,15 @@ public sealed class MosaicForm : ThemedForm
 
         BuildLayout();
 
-        // 预设优先于内置的重庆范围：用户选了预设就是要那套参数。
-        ApplyPreset(preset?.ClipBox is { } presetBox
-            ? new ClipPreset { Id = "preset", Name = "预设", Bounds = [presetBox.West, presetBox.South, presetBox.East, presetBox.North] }
-            : PresetStore.Chongqing);
+        // 不再默认套"重庆全域"：范围由用户来定——预设带范围就用预设的，
+        // 否则留空，交给「用输入范围 / 选边界 / 手填」三个入口（换区域时不必先删掉重庆的坐标）。
+        if (preset?.ClipBox is { } presetBox)
+            ApplyPreset(new ClipPreset
+            {
+                Id = "preset",
+                Name = "预设",
+                Bounds = [presetBox.West, presetBox.South, presetBox.East, presetBox.North],
+            });
         if (preset is not null)
         {
             _resampling.SelectedItem = preset.Resampling;
@@ -203,7 +209,8 @@ public sealed class MosaicForm : ThemedForm
         _preset.DropDownStyle = ComboBoxStyle.DropDownList;
         _preset.Width = 228;
         foreach (var p in _presets.ClipPresets) _preset.Items.Add(p);
-        _preset.SelectedIndex = 0;
+        // 不预选：预选第一项会立刻把它的范围填进四框（等于又绑回了某个默认区域）。
+        _preset.SelectedIndex = -1;
         _preset.SelectedIndexChanged += (_, _) =>
         {
             if (_suppressPresetEvent) return;
@@ -217,11 +224,22 @@ public sealed class MosaicForm : ThemedForm
         // 不会像固定列那样把标签挤断。
         for (var i = 0; i < 4; i++)
         {
-            var box = new TextBox { Width = 96, Text = "0" };
+            // 留空而不是填 0：空会让覆盖检查提示"裁剪范围要填四个数"，0 会被当成
+            // 一个真实的（无效）范围，提示反而绕。
+            var box = new TextBox { Width = 96 };
             box.TextChanged += (_, _) => UpdateCoverage();
             _bounds[i] = box;
         }
         var boundsRow = FormLayout.BoundsRow(_bounds, BoundLabels);
+
+        // 范围来源：已添加的输入 DEM 一步取并集；已有瓦片目录反推。
+        // （第三个来源「选行政区划」在下一行，本来就有。）
+        var sourceRow = FormLayout.Grid(FormLayout.Fixed(112), FormLayout.Fixed(132));
+        var fromInputs = new Button { Text = "用输入范围", Width = 104 };
+        fromInputs.Click += (_, _) => FillFromInputs();
+        var fromTiles = new Button { Text = "用已有瓦片…", Width = 124 };
+        fromTiles.Click += (_, _) => FillFromTiles();
+        sourceRow.AddRow(fromInputs, fromTiles);
 
         var boundaryRow = FormLayout.Grid(FormLayout.Fixed(190), FormLayout.Fixed(112), FormLayout.Flexible());
         _useBoundary.Text = "按行政区划边界裁剪";
@@ -239,6 +257,7 @@ public sealed class MosaicForm : ThemedForm
 
         range.AddRow(presetRow);
         range.AddRow(boundsRow);
+        range.AddRow(sourceRow);
         range.AddRow(boundaryRow);
         rangeBox.Controls.Add(range);
         root.Controls.Add(rangeBox, 0, 2);
@@ -373,6 +392,40 @@ public sealed class MosaicForm : ThemedForm
         _bounds[2].Text = preset.Box.East.ToString(CultureInfo.InvariantCulture);
         _bounds[3].Text = preset.Box.North.ToString(CultureInfo.InvariantCulture);
         _suppressPresetEvent = false;
+        UpdateCoverage();
+    }
+
+    /// <summary>把已添加输入 DEM 的并集范围填进四框（换区域时最常用的一步）。</summary>
+    private void FillFromInputs()
+    {
+        if (Coverage.Union(_infos) is not { } union)
+        {
+            SetCoverage("还没有输入 DEM，先添加输入文件。", Color.Firebrick);
+            return;
+        }
+        SetBounds(union);
+    }
+
+    /// <summary>从已有瓦片目录反推范围（与打包用的是同一份扫描实现）。</summary>
+    private void FillFromTiles()
+    {
+        using var dialog = new FolderBrowserDialog { Description = "选择已有瓦片目录（z/x/y.terrain）" };
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+
+        if (LayerJson.InspectTiles(dialog.SelectedPath) is not { } coverage)
+        {
+            SetCoverage("这个目录里没有 .terrain 瓦片。", Color.Firebrick);
+            return;
+        }
+        SetBounds(coverage.Bounds);
+    }
+
+    private void SetBounds(BBox box)
+    {
+        _bounds[0].Text = box.West.ToString(CultureInfo.InvariantCulture);
+        _bounds[1].Text = box.South.ToString(CultureInfo.InvariantCulture);
+        _bounds[2].Text = box.East.ToString(CultureInfo.InvariantCulture);
+        _bounds[3].Text = box.North.ToString(CultureInfo.InvariantCulture);
         UpdateCoverage();
     }
 

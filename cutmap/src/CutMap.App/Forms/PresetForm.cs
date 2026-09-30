@@ -256,7 +256,8 @@ public sealed class ClipPresetEditForm : ThemedForm
     private readonly Button _ok = new();
 
     private readonly ClipPreset? _original;
-    public ClipPreset Result { get; private set; } = PresetStore.Chongqing;
+    // 不再拿"重庆全域"当初始值：新增预设时是空白的，值由 Build() 在按下确定时产出。
+    public ClipPreset Result { get; private set; } = new() { Id = "", Name = "", Bounds = [0, 0, 0, 0] };
 
     private static readonly string[] Labels = ["西", "南", "东", "北"];
 
@@ -288,12 +289,16 @@ public sealed class ClipPresetEditForm : ThemedForm
         layout.SetColumnSpan(_name, 3);
 
         layout.Controls.Add(new Label { Text = "范围：", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 1);
-        var source = original?.Box ?? PresetStore.Chongqing.Box;
-        var values = new[] { source.West, source.South, source.East, source.North };
+        // 新增时四个框留空（不再预填"重庆全域"）；编辑时把原有范围填进去
+        // ——原来 values 算出来却没写进 TextBox，编辑已有预设时框里是空的。
+        var values = original is null
+            ? ["", "", "", ""]
+            : new[] { original.Box.West, original.Box.South, original.Box.East, original.Box.North }
+                .Select(v => v.ToString(CultureInfo.InvariantCulture)).ToArray();
         // 四个数值输入用共享的行构造器：每格宽度按内容定，不会挤到截断。
         for (var i = 0; i < _bounds.Length; i++)
         {
-            _bounds[i] = new TextBox();
+            _bounds[i] = new TextBox { Text = values[i] };
             _bounds[i].TextChanged += (_, _) => UpdatePreview();
         }
         layout.Controls.Add(FormLayout.BoundsRow(_bounds, Labels), 1, 1);

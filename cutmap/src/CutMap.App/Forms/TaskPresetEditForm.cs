@@ -27,7 +27,8 @@ public sealed class TaskPresetEditForm : ThemedForm
     private readonly Button _ok = new();
 
     private readonly TaskPreset? _original;
-    public TaskPreset Result { get; private set; } = PresetStore.ChongqingTask;
+    // 新增时是空白模板，不再以"重庆全域"起手（值在按下确定时由 Build() 产出）。
+    public TaskPreset Result { get; private set; } = new() { Id = "", Name = "", Bounds = null };
 
     private static readonly string[] Labels = ["西", "南", "东", "北"];
 
@@ -182,28 +183,28 @@ public sealed class TaskPresetEditForm : ThemedForm
 
     private void LoadFrom(TaskPreset? preset)
     {
-        var source = preset ?? PresetStore.ChongqingTask;
-        _name.Text = preset is null ? "" : source.Name;
-        _description.Text = source.Description;
+        // 新增预设：全部留空 / 取中性默认（不再拿"重庆全域"当模板）。
+        _name.Text = preset?.Name ?? "";
+        _description.Text = preset?.Description ?? "";
 
-        var box = source.ClipBox ?? PresetStore.Chongqing.Box;
-        double[] values = [box.West, box.South, box.East, box.North];
+        var box = preset?.ClipBox;
+        var values = box is null ? null : new[] { box.Value.West, box.Value.South, box.Value.East, box.Value.North };
         for (var i = 0; i < 4; i++)
-            _bounds[i].Text = values[i].ToString(CultureInfo.InvariantCulture);
+            _bounds[i].Text = values is null ? "" : values[i].ToString(CultureInfo.InvariantCulture);
 
-        _autoZoom.Checked = source.MaxZoom is null;
-        _maxZoom.Enabled = source.MaxZoom is not null;
-        _maxZoom.Value = Math.Clamp(source.MaxZoom ?? 14, _maxZoom.Minimum, _maxZoom.Maximum);
+        _autoZoom.Checked = preset?.MaxZoom is null;
+        _maxZoom.Enabled = preset?.MaxZoom is not null;
+        _maxZoom.Value = Math.Clamp(preset?.MaxZoom ?? 14, _maxZoom.Minimum, _maxZoom.Maximum);
 
-        _resampling.SelectedItem = source.Resampling;
+        _resampling.SelectedItem = preset?.Resampling ?? "bilinear";
         if (_resampling.SelectedIndex < 0) _resampling.SelectedIndex = 0;
 
-        _writeMetadata.Checked = source.WriteMetadata;
-        _layerName.Text = source.LayerName;
-        _layerDescription.Text = source.LayerDescription;
-        _layerVersion.Text = source.LayerVersion;
-        _zipTiles.Checked = source.ZipTiles;
-        _zipAlgo.Checked = source.ZipAlgo;
+        _writeMetadata.Checked = preset?.WriteMetadata ?? true;
+        _layerName.Text = preset?.LayerName ?? "";
+        _layerDescription.Text = preset?.LayerDescription ?? "";
+        _layerVersion.Text = preset?.LayerVersion ?? "";
+        _zipTiles.Checked = preset?.ZipTiles ?? false;
+        _zipAlgo.Checked = preset?.ZipAlgo ?? false;
     }
 
     private TaskPreset Build()

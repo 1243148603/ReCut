@@ -32,18 +32,7 @@ public static class Coverage
         if (inputs.Count == 0)
             return new CoverageResult(false, null, 0, 0, 0, 0, ["没有输入文件。"]);
 
-        double west = double.MaxValue, south = double.MaxValue;
-        double east = double.MinValue, north = double.MinValue;
-        foreach (var info in inputs)
-        {
-            var box = info.Extent;
-            west = Math.Min(west, box.West);
-            south = Math.Min(south, box.South);
-            east = Math.Max(east, box.East);
-            north = Math.Max(north, box.North);
-        }
-
-        var union = new BBox(west, south, east, north);
+        var union = Union(inputs)!.Value;
 
         // 半个像元的口径余量（+一个小的浮点余量，免得"差 1e-15 度"被报成缺一条边）。
         var toleranceX = inputs.Max(i => i.PixelSizeX) / 2.0 + 1e-9;
@@ -68,6 +57,27 @@ public static class Coverage
             problems.Add($"输入覆盖 {union}，目标 {target} 在其内。");
 
         return new CoverageResult(covered, union, westGap, southGap, eastGap, northGap, problems);
+    }
+
+    /// <summary>
+    /// 输入的并集范围（GDAL 外边缘口径）。覆盖检查与「用输入范围」按钮共用同一份算法，
+    /// 免得两处各写一遍、口径悄悄漂移。
+    /// </summary>
+    public static BBox? Union(IReadOnlyList<RasterInfo> inputs)
+    {
+        if (inputs.Count == 0) return null;
+
+        double west = double.MaxValue, south = double.MaxValue;
+        double east = double.MinValue, north = double.MinValue;
+        foreach (var info in inputs)
+        {
+            var box = info.Extent;
+            west = Math.Min(west, box.West);
+            south = Math.Min(south, box.South);
+            east = Math.Max(east, box.East);
+            north = Math.Max(north, box.North);
+        }
+        return new BBox(west, south, east, north);
     }
 
     /// <summary>经度一度对应的米数随纬度收缩，拿目标南边界算个近似值即可——这里只是把"缺多少度"说得直观些。</summary>

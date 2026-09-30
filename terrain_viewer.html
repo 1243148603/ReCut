@@ -47,6 +47,16 @@
   }
   #controls button:hover, #controls select:hover { background: #273449; }
 
+  /* 右下角读数：点击地形后显示 经纬度 / 高程 / 瓦片号 */
+  #readout {
+    position: absolute; right: 12px; bottom: 12px; z-index: 999;
+    background: rgba(15,23,42,.86); color: #e2e8f0; border-radius: 10px;
+    padding: 10px 14px; font: 12px/1.7 Consolas, monospace; min-width: 230px;
+    box-shadow: 0 4px 18px rgba(0,0,0,.35); display: none;
+  }
+  #readout b { color: #7dd3fc; font-weight: 600; }
+  #readout .hint { color: #94a3b8; }
+
   /* 诊断面板：默认不出现，?debug=1 或点「诊断」才展开 */
   #panel {
     position: absolute; top: 12px; right: 12px; z-index: 999;
@@ -82,9 +92,14 @@
       <option value="ion">Cesium Ion 影像（Bing，在线）</option>
       <option value="osm">OSM（在线）</option>
     </select></label>
+  <label>影像 <input id="opacity" type="range" min="0" max="100" step="5" value="100">
+    <span id="opacity-text">100%</span></label>
+  <label><input id="lighting" type="checkbox"> 光照</label>
   <button id="fly-home">回到范围</button>
   <button id="toggle-debug">诊断</button>
 </div>
+
+<div id="readout"></div>
 
 <div id="panel" class="hidden"><div id="log">正在加载 Cesium.js…</div></div>
 
@@ -425,24 +440,30 @@ if (DEBUG) {
 
 /** 底图：默认 Cesium 自带的 Natural Earth II（随 vendor 分发，纯本地离线）。
  *  ?basemap=none 关掉；?basemap=osm 换成在线 OSM（需能访问 tile.openstreetmap.org）。 */
+let currentImagery = null;      // 当前影像图层（透明度滑块改它）
+
 async function setBasemap(kind) {
   viewer.imageryLayers.removeAll();
+  currentImagery = null;
   if (kind === 'none') { say('底图已关闭。', 'dim'); return; }
   try {
     if (kind === 'ion') {
       if (!ION_READY) { say('没有 Cesium Ion 令牌（viewer/ion.local.js），跳过。', 'warn'); return; }
       // asset 2 = Bing Maps Aerial（Cesium Ion 的在线卫星影像）。
       const imagery = await Cesium.IonImageryProvider.fromAssetId(2);
-      viewer.imageryLayers.addImageryProvider(imagery);
+      currentImagery = viewer.imageryLayers.addImageryProvider(imagery);
+      currentImagery.alpha = Number(document.getElementById('opacity').value) / 100;
       say('已叠加 Cesium Ion 影像（Bing 卫星图，在线）', 'ok');
     } else if (kind === 'osm') {
-      viewer.imageryLayers.addImageryProvider(
+      currentImagery = viewer.imageryLayers.addImageryProvider(
         new Cesium.OpenStreetMapImageryProvider({ url: 'https://tile.openstreetmap.org/' }));
+      currentImagery.alpha = Number(document.getElementById('opacity').value) / 100;
       say('已叠加 OSM 底图（在线；国内网络可能连不上）', 'ok');
     } else {
       const imagery = await Cesium.TileMapServiceImageryProvider.fromUrl(
         Cesium.buildModuleUrl('Assets/Textures/NaturalEarthII'));
-      viewer.imageryLayers.addImageryProvider(imagery);
+      currentImagery = viewer.imageryLayers.addImageryProvider(imagery);
+      currentImagery.alpha = Number(document.getElementById('opacity').value) / 100;
       say('已叠加本地底图：Cesium 自带 Natural Earth II（0–2 级，离线可用）', 'ok');
     }
   } catch (e) {
@@ -488,7 +509,8 @@ function flyHome() {
     return;
   }
 
-  const basemapKind = (params.get('basemap') ?? 'local').toLowerCase();
+  // 有 Ion 令牌就默认用 Bing 影像（真实底图）；没有则退回本地离线影像。
+  const basemapKind = (params.get('basemap') ?? (ION_READY ? 'ion' : 'local')).toLowerCase();
   const select = document.getElementById('basemap');
   // 没有令牌时把 Ion 那一项标灰，别让用户选了才发现不能用。
   const ionOption = select.querySelector('option[value="ion"]');
@@ -540,7 +562,65 @@ function flyHome() {
     }
   }
 
-  // 控制条
+  // ── 点击拾取：经纬度 / 高程 / 瓦片号 ─────────────────────────────────
+  // 用 camera.getPickRay + globe.pick 取与**地形网格**的交点（不是椭球面），
+  // 所以高度是地形表面的高度。取不到（点到天空/球外）就不显示。
+  const readout = document.getElementById('readout');
+  const tileOf = (lon, lat) => {
+    const nx = 2 ** (MAXZOOM + 1), ny = 2 ** MAXZOOM;
+    return [Math.floor((lon + 180) / 360 * nx), Math.floor((lat + 90) / 180 * ny)];
+  };
+  function pickAt(x, y) {
+    const ray = viewer.camera.getPickRay(new Cesium.Cartesian2(x, y));
+    let cartesian = ray && viewer.scene.globe.pick(ray, viewer.scene);
+    let fromTerrain = Boolean(cartesian);
+    if (!cartesian) {
+      // 地形瓦片还没到时光线拾取不到网格，退回椭球面：经纬度照样能给，
+      // 只把高程标成"未知"，不拿 0 假装地形高度。
+      cartesian = viewer.camera.pickEllipsoid(new Cesium.Cartesian2(x, y),
+                                              viewer.scene.globe.ellipsoid);
+    }
+    if (!cartesian) { say(`拾取(${x},${y})：射线既没打到地形也没打到椭球`, 'dim'); return; }
+    const c = Cesium.Cartographic.fromCartesian(cartesian);
+    const lon = Cesium.Math.toDegrees(c.longitude);
+    const lat = Cesium.Math.toDegrees(c.latitude);
+    const [tx, ty] = tileOf(lon, lat);
+    readout.style.display = 'block';
+    readout.innerHTML =
+      `<b>经度</b> ${lon.toFixed(6)}°E<br>` +
+      `<b>纬度</b> ${lat.toFixed(6)}°N<br>` +
+      `<b>高程</b> ${fromTerrain ? c.height.toFixed(1) + ' m（地形表面）' : '未知（地形瓦片未到）'}<br>` +
+      `<b>瓦片</b> z${MAXZOOM} · ${tx}/${ty}<br>` +
+      `<span class="hint">再点一处更新；与源 DEM 同点对比即重采样保真度</span>`;
+  }
+  const pickHandler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
+  pickHandler.setInputAction((click) => pickAt(click.position.x, click.position.y),
+                             Cesium.ScreenSpaceEventType.LEFT_CLICK);
+  // ?pick=center：加载完成后自动在画面中心取一次读数——给自动化验证/截图用，
+  // 走的是与点击完全相同的代码路径。
+  if (params.has('pick')) {
+    // 地形瓦片是陆续到的，太早点可能还没网格可拾取：每 2 秒试一次，取到为止。
+    let tries = 0;
+    const timer = setInterval(() => {
+      pickAt(viewer.canvas.clientWidth / 2, viewer.canvas.clientHeight / 2);
+      if (readout.textContent.trim() !== '' || ++tries > 12) clearInterval(timer);
+    }, 2000);
+  }
+
+  // ── 控制条 ──────────────────────────────────────────────────────────
+  const opacity = document.getElementById('opacity');
+  const opacityText = document.getElementById('opacity-text');
+  opacity.addEventListener('input', () => {
+    const a = Number(opacity.value) / 100;
+    if (currentImagery) currentImagery.alpha = a;
+    opacityText.textContent = opacity.value + '%';
+  });
+  document.getElementById('lighting').addEventListener('change', (e) => {
+    // 地形光照（昼夜明暗）。关掉时地表均匀受光，看起伏主要靠垂直夸张。
+    viewer.scene.globe.enableLighting = e.target.checked;
+    say(`地形光照：${e.target.checked ? '开' : '关'}`, 'dim');
+  });
+
   const slider = document.getElementById('exaggeration');
   const sliderText = document.getElementById('exaggeration-text');
   slider.addEventListener('input', () => {

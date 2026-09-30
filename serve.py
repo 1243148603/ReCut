@@ -47,6 +47,7 @@ response from before a fix, which makes a corrected server look broken.
 
 import argparse
 import functools
+import glob
 import http.server
 import os
 import sys
@@ -182,8 +183,16 @@ def main():
     if args.tileset:
         tileset = os.path.abspath(args.tileset)
         if not os.path.exists(os.path.join(tileset, "layer.json")):
-            print(f"warning: {tileset} 里没有 layer.json，预览页会退回默认路径",
-                  file=sys.stderr)
+            print(f"warning: {tileset} 里没有 layer.json —— Cesium 靠它识别瓦片集，"
+                  "缺了 3D 加载不了。", file=sys.stderr)
+            # 常见误指：把"下载下来的 DEM 分幅目录"当成切片产物。给一句能照做的提示，
+            # 比只说"没有 layer.json"有用。
+            if glob.glob(os.path.join(tileset, "*.tif")) or glob.glob(os.path.join(tileset, "*.tiff")):
+                print("         这个目录看着是 DEM 分幅（*.tif）：要先拼接裁剪 → 切片 → 打包，"
+                      "打包那一步才会写 layer.json。", file=sys.stderr)
+            else:
+                print("         请指向含 layer.json 的切片产物目录；没有就对该目录跑一次「打包」。",
+                      file=sys.stderr)
     else:
         found = find_tilesets(root)
         if found:

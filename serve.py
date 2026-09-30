@@ -25,11 +25,12 @@ Why this exists (and why `python -m http.server` is NOT enough):
   equivalent for local viewing.
 
 Usage:
-  python serve.py                      # 127.0.0.1:8080, serves this directory
+  python serve.py                      # serve this directory (repo root) at 127.0.0.1:8080
+  python serve.py --tileset <dir>      # 指定瓦片集（挂到 /__tileset__/，放在哪个盘都行）
   python serve.py --port 9000
-  python serve.py --directory data/outputs/cesium_terrain
+  python serve.py --directory <dir>    # 换服务根（默认：本脚本所在目录）
 
-Then open http://127.0.0.1:8080/terrain_viewer.html
+Then open the viewer URL printed on startup (it carries ?tiles=...&debug=1).
 
 The gzip header is applied ONLY when the file actually begins with the gzip
 magic, so this server also does the right thing if the tileset is ever

@@ -42,12 +42,14 @@ public static class DeployReadme
         sb.AppendLine();
         sb.AppendLine("本机预览（先看效果，不用写前端代码）");
         sb.AppendLine("------------------------------------");
-        sb.AppendLine("CutMap 仓库根目录自带预览页 terrain_viewer.html 与服务器 serve.py：");
+        sb.AppendLine("CutMap 源码仓库根目录自带预览页 terrain_viewer.html 与服务器 serve.py");
+        sb.AppendLine("（Cesium 已随仓库分发，不需要联网）：");
         sb.AppendLine();
         sb.AppendLine("  python serve.py --tileset <本目录>     # 启动后终端会打印预览地址");
         sb.AppendLine();
-        sb.AppendLine("它做了两件关键的事：对 .terrain 声明 Content-Encoding: gzip（见下节），");
-        sb.AppendLine("并用 URL 里的 ?tiles= 指向这份瓦片集。");
+        sb.AppendLine("它做了三件关键的事：对 .terrain 声明 Content-Encoding: gzip（见下节）、");
+        sb.AppendLine("把本目录挂载到 /__tileset__/（所以瓦片放在哪个盘都行），");
+        sb.AppendLine("并用 URL 里的 ?tiles= 指向它。");
         sb.AppendLine();
         sb.AppendLine("预览页的镜头、层级、采样点与自检项**全部从 layer.json 读**，");
         sb.AppendLine("所以换任何区域/瓦片集都不需要改页面；Cesium 随仓库分发，断网也能开。");

@@ -49,6 +49,7 @@ import functools
 import http.server
 import os
 import sys
+import urllib.parse
 
 GZIP_MAGIC = b"\x1f\x8b"
 
@@ -61,6 +62,25 @@ class TerrainHandler(http.server.SimpleHTTPRequestHandler):
     _gzip_ok = False
     _terrain_response = False
     _no_store = False
+
+    def __init__(self, *args, tileset_dir=None, **kwargs):
+        # 要预览的瓦片集目录（经 /__tileset__/ 挂载）；None 表示没有。
+        self.tileset_dir = tileset_dir
+        super().__init__(*args, **kwargs)
+
+    def translate_path(self, path):
+        """把 /__tileset__/… 映射到瓦片集目录，其余走常规静态服务。
+
+        这样**瓦片可以放在任意位置**（仓库外、另一个盘），不必为了预览先拷进仓库树；
+        `?tiles=./__tileset__/` 就能用。路径做了规范化并丢弃 '..'，避免目录穿越。
+        """
+        prefix = "/__tileset__/"
+        if self.tileset_dir and path.startswith(prefix):
+            rel = path[len(prefix):].split("?", 1)[0].split("#", 1)[0]
+            rel = urllib.parse.unquote(rel).replace("\\", "/")
+            parts = [p for p in rel.split("/") if p not in ("", ".", "..")]
+            return os.path.join(os.path.abspath(self.tileset_dir), *parts)
+        return super().translate_path(path)
 
     def send_head(self):
         # Decide before super() emits anything, because Content-Encoding must
@@ -172,7 +192,7 @@ def main():
                 for t in found:
                     print("    " + os.path.relpath(t, root).replace(os.sep, "/"))
 
-    handler = functools.partial(TerrainHandler, directory=root)
+    handler = functools.partial(TerrainHandler, directory=root, tileset_dir=tileset)
     try:
         httpd = Server((args.bind, args.port), handler)
     except OSError as exc:
@@ -181,19 +201,16 @@ def main():
               file=sys.stderr)
         return 1
 
-    # 预览 URL 带上 ?tiles=：不指定的话页面用默认路径（仓库里那份），
-    # 换区域时不用改 HTML。
-    import urllib.parse
+    # 预览 URL 带上 ?tiles=：瓦片集经 /__tileset__/ 挂载，所以它在哪个盘都行。
     query = ""
     if tileset:
-        rel = os.path.relpath(tileset, root).replace(os.sep, "/")
-        query = "?" + urllib.parse.urlencode({"tiles": rel + "/", "debug": "1"})
+        # 手写而不是 urlencode：编码后 %2F 一串不好读，浏览器两种都认。
+        query = "?tiles=./__tileset__/&debug=1"
 
     print(f"serving {root}")
     print(f"  viewer : http://{args.bind}:{args.port}/terrain_viewer.html{query}")
     if tileset:
-        print(f"  tileset: {os.path.relpath(tileset, root).replace(os.sep, '/')}"
-              "   （换个瓦片集用 --tileset，或改 URL 里的 ?tiles=）")
+        print(f"  tileset: {tileset}   （挂载在 /__tileset__/；换个瓦片集重跑 --tileset）")
     print("  .terrain responses carry Content-Encoding: gzip (logged as [gzip])")
     print("Ctrl-C to stop.")
     try:

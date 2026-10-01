@@ -83,7 +83,9 @@ public static class DeployReadme
         sb.AppendLine("  viewer.scene.globe.clippingPolygons =");
         sb.AppendLine("      new Cesium.ClippingPolygonCollection({ polygons: [clip] });");
         sb.AppendLine("  // 恢复：viewer.scene.globe.clippingPolygons = undefined;");
-        sb.AppendLine("  // 注意：ClippingPolygonCollection 需要 WebGL2。");
+        sb.AppendLine("  // 注意 1：ClippingPolygonCollection 需要 WebGL2。");
+        sb.AppendLine("  // 注意 2：ClippingPolygon 只对**凸多边形**保证正确；行政区划边界几乎都是凹的，");
+        sb.AppendLine("  //         凹处可能被多裁/少裁——正式展示建议直接用「裙边填充」那条路径。");
         sb.AppendLine();
         sb.AppendLine("⚠ 必须让服务器声明 Content-Encoding: gzip（否则地形永远不显示）");
         sb.AppendLine("-------------------------------------------------------------------");

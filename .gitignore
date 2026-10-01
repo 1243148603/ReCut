@@ -75,3 +75,11 @@ viewer/ion.local.js
 #            取一次入库）。理由是**断网可用的预览页是交付形态的一部分**：
 #            只要走 CDN，内网/离线环境就开不了 3D，而预览页是验证产物的第一手段。
 #            版本与来源记在 docs/通用化说明.md。
+
+# --- frontend/（Vite + Cesium 工程）---------------------------------------
+# 依赖、构建产物、本地配置与放进去的瓦片都不入库；源码与 lock 入库。
+frontend/node_modules/
+frontend/dist/
+frontend/.env.local
+frontend/public/terrain/
+frontend/public/cesium/

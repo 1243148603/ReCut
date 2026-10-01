@@ -1,0 +1,18 @@
+{
+  "name": "cutmap-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "CutMap 地形瓦片的 Cesium 前端（官方 cesium 包 + Vite；可独立部署，也可嵌进已有前端工程）",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "cesium": "^1.128.0"
+  },
+  "devDependencies": {
+    "vite": "^6.0.0"
+  }
+}

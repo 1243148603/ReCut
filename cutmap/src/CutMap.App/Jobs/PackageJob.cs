@@ -21,6 +21,18 @@ public sealed class PackageJob : Job
     public required string LayerDescription { get; init; }
     public required string LayerVersion { get; init; }
 
+    /// <summary>
+    /// 边界矢量（FR-15）：矢量裁剪会在 tif 旁写同名 *.boundary.geojson，
+    /// 打包时把它一并放进瓦片目录。**只按"与本次裁剪 tif 同名"这一条规则找**，
+    /// 有就带、没有就算了——不是所有产物都来自矢量裁剪。
+    /// </summary>
+    private string? ResolveBoundaryGeoJson()
+    {
+        if (AlgoTifPath is not { } tif) return null;
+        var candidate = Path.ChangeExtension(tif, ".boundary.geojson");
+        return File.Exists(candidate) ? candidate : null;
+    }
+
     public override string TypeName => "打包";
     public override string Display =>
         TilesDirectory is not null && AlgoTifPath is not null ? "前端 + 算法"
@@ -74,7 +86,8 @@ public sealed class PackageJob : Job
                 ZipTiles,
                 ZipAlgo,
                 layer,
-                coverage),
+                coverage,
+                BoundaryGeoJsonPath: ResolveBoundaryGeoJson()),
             onProgress, onLog, cancellation);
 
         return new JobResult(true, result.Summary, null,

@@ -32,13 +32,18 @@ internal static class PackageCommand
 
         var ok = true;
         Console.WriteLine("打包（写 layer.json / 部署说明 / 算法元数据" + (zip ? " / 瓦片 zip" : "") + "）");
+        var tif = File.Exists(tifPath) ? tifPath : null;
+        // FR-15：矢量裁剪在 tif 旁写的同名 *.boundary.geojson 随瓦片一起分发。
+        var boundary = tif is null ? null : Path.ChangeExtension(tif, ".boundary.geojson");
+        if (boundary is not null && !File.Exists(boundary)) boundary = null;
         var sw = Stopwatch.StartNew();
         var result = Packager.Run(
             new PackageRequest(
                 Path.Combine(tilesDir, ".."),
                 TilesDirectory: tilesDir,
-                AlgoTifPath: File.Exists(tifPath) ? tifPath : null,
-                ZipTiles: zip, ZipAlgo: false),
+                AlgoTifPath: tif,
+                ZipTiles: zip, ZipAlgo: false,
+                BoundaryGeoJsonPath: boundary),
             onLog: line => Console.WriteLine("  " + line));
         sw.Stop();
 

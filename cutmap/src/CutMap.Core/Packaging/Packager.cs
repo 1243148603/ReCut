@@ -19,7 +19,13 @@ public sealed record PackageRequest(
     /// <summary>前端产物的 layer.json。null 时从瓦片目录反推（FR-03 的独立打包）。</summary>
     LayerJson? Layer = null,
     /// <summary>调用方刚扫过的瓦片统计。给了就不重复遍历目录（22 万瓦片一次扫描约数秒）。</summary>
-    TileCoverage? Coverage = null);
+    TileCoverage? Coverage = null,
+    /// <summary>
+    /// 随前端产物分发的边界矢量（FR-15，矢量裁剪产物旁的 *.boundary.geojson）。
+    /// 给了就拷进瓦片目录——它随后自然进 zip。**显式传参，不做路径猜测**：
+    /// 打包是独立步骤，指着任意瓦片目录也能跑，猜出来的路径十有八九是错的。
+    /// </summary>
+    string? BoundaryGeoJsonPath = null);
 
 public sealed record PackageResult(
     string? LayerJsonPath,
@@ -72,6 +78,25 @@ public static class Packager
             File.WriteAllText(readmePath, DeployReadme.Build(layer.Name, layer.MaxZoom, tileCount),
                               new System.Text.UTF8Encoding(false));
             onLog?.Invoke($"已写 {readmePath}");
+
+            // FR-15：边界矢量随产物分发——拷进瓦片目录，它才会进 zip、
+            // 才会跟着瓦片一起交到前端手里。
+            if (request.BoundaryGeoJsonPath is { } boundaryPath)
+            {
+                if (File.Exists(boundaryPath))
+                {
+                    // **统一落成 boundary.geojson**：前端才能确定性地从
+                    // <瓦片目录>/boundary.geojson 取到它，不必去猜裁剪文件名叫什么。
+                    var boundaryTarget = Path.Combine(tilesDir, "boundary.geojson");
+                    File.Copy(boundaryPath, boundaryTarget, overwrite: true);
+                    onLog?.Invoke($"已随产物分发边界矢量：boundary.geojson" +
+                                  $"（源：{Path.GetFileName(boundaryPath)}）");
+                }
+                else
+                {
+                    onLog?.Invoke($"边界矢量不存在，跳过：{boundaryPath}");
+                }
+            }
         }
 
         cancellation.ThrowIfCancellationRequested();

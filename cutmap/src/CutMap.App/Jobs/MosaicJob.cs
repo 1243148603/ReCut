@@ -98,8 +98,11 @@ public sealed class MosaicJob : Job
         if (Boundaries is { Count: > 0 } exported)
         {
             var productBoundary = Path.ChangeExtension(OutputPath, ".boundary.geojson");
+            // FR-15 要"内部下级界线"，就得把边界库传下去——只写外轮廓与中心点
+            // 是最初的实现，前端拿到的图上没有下级界线。
+            var store = BoundaryStore.Locate();
             BoundaryExport.WriteProductBoundary(
-                exported, store: null, productBoundary,
+                exported, store.IsEmpty ? null : store, productBoundary,
                 Path.GetFileNameWithoutExtension(OutputPath),
                 sourceNotes: [BoundaryStore.SourceAttribution]);
             onLog($"边界矢量：{productBoundary}");

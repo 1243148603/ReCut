@@ -56,6 +56,35 @@ public static class DeployReadme
         sb.AppendLine("断网也能开（底图是 0–2 级的 Natural Earth II，只够看轮廓；精细影像由前端配）。");
         sb.AppendLine("带 ?debug=1 可展开诊断面板（瓦片请求状态、各点高程自检）。");
         sb.AppendLine();
+        sb.AppendLine("边界矢量（只有「按行政区划边界裁剪」的产物才有）");
+        sb.AppendLine("----------------------------------------------------");
+        sb.AppendLine("同目录的 *.boundary.geojson 是这次裁剪的边界，按 properties.kind 区分：");
+        sb.AppendLine("  outline   外轮廓（闭合线/多边形）");
+        sb.AppendLine("  sublimit  内部下级界线（细线）");
+        sb.AppendLine("  label     行政中心标注点（name / gb）");
+        sb.AppendLine("  source    数据来源署名（geometry 为 null，不要对它取几何）");
+        sb.AppendLine();
+        sb.AppendLine("前端叠加一行加载、再按 kind 上样式：");
+        sb.AppendLine("  const ds = await Cesium.GeoJsonDataSource.load('/terrain/xxx.boundary.geojson');");
+        sb.AppendLine("  viewer.dataSources.add(ds);");
+        sb.AppendLine("  for (const e of ds.entities) switch (e.properties.kind.getValue()) {");
+        sb.AppendLine("    case 'outline':  e.polyline = { width: 2, material: Cesium.Color.WHITE, clampToGround: true }; break;");
+        sb.AppendLine("    case 'sublimit': e.polyline = { width: 1, material: Cesium.Color.WHITE.withAlpha(0.45), clampToGround: true }; break;");
+        sb.AppendLine("    case 'label':    e.label    = { text: e.properties.name.getValue(), heightReference: Cesium.HeightReference.CLAMP_TO_GROUND, style: Cesium.LabelStyle.FILL_AND_OUTLINE, outlineWidth: 2 }; e.point = { pixelSize: 6 }; break;");
+        sb.AppendLine("    case 'source':   e.show = false; break;   // 只做署名");
+        sb.AppendLine("  }");
+        sb.AppendLine();
+        sb.AppendLine("边界外裁成空洞（可选，与「裙边填充」两条路径并存）");
+        sb.AppendLine("--------------------------------------------------------");
+        sb.AppendLine("矢量裁剪默认把边界外填成平坦裙边（CTB 不处理 nodata）。若前端希望边界外");
+        sb.AppendLine("直接不显示，用 ClippingPolygon 按 outline 的外环裁掉：");
+        sb.AppendLine("  const positions = Cesium.Cartesian3.fromDegreesArray(outlineCoords);   // outline 外环");
+        sb.AppendLine("  const clip = new Cesium.ClippingPolygon({ positions });");
+        sb.AppendLine("  viewer.scene.globe.clippingPolygons =");
+        sb.AppendLine("      new Cesium.ClippingPolygonCollection({ polygons: [clip] });");
+        sb.AppendLine("  // 恢复：viewer.scene.globe.clippingPolygons = undefined;");
+        sb.AppendLine("  // 注意：ClippingPolygonCollection 需要 WebGL2。");
+        sb.AppendLine();
         sb.AppendLine("⚠ 必须让服务器声明 Content-Encoding: gzip（否则地形永远不显示）");
         sb.AppendLine("-------------------------------------------------------------------");
         sb.AppendLine("CTB 输出的 .terrain 是 **gzip 压缩**的。磁盘上 0/1/0.terrain 只有 86 字节，");
@@ -104,6 +133,10 @@ public static class DeployReadme
         sb.AppendLine("  可表示 −1000 m 到 +12107 m。每块是 65×65 网格 + 1 字节 childTileMask");
         sb.AppendLine("  + 1 字节 waterMask。");
         sb.AppendLine("  TMS 编号：y 轴自下而上（从南极计数），与滑图相反。");
+        sb.AppendLine();
+        sb.AppendLine("格式状态：heightmap-1.0，Cesium 官方已标记 deprecated（推荐 quantized-mesh）。");
+        sb.AppendLine("本产物由 ctb-tile 生成，而 ctb-tile 只产出 heightmap——Cesium 1.128 仍完整");
+        sb.AppendLine("支持它，可以放心用；将来若要换 quantized-mesh，需要更换切片引擎。");
         return sb.ToString();
     }
 }

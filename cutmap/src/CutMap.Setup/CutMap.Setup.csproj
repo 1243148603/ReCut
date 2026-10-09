@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <!--
     CutMap 安装程序（NFR-03 的 setup.exe）。
@@ -15,6 +15,7 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
+    <ApplicationIcon>..\..\assets\cutmap.ico</ApplicationIcon>
     <TargetFramework>net8.0-windows</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>

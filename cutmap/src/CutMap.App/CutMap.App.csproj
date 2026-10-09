@@ -6,6 +6,8 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
+    <!-- 图标：cutmap/assets/cutmap.ico（同一份给 App/CLI/安装器） -->
+    <ApplicationIcon>..\..\assets\cutmap.ico</ApplicationIcon>
     <TargetFramework>net8.0-windows</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>

@@ -1,4 +1,5 @@
 using CutMap.App.Jobs;
+using CutMap.Core.Vector;
 using CutMap.App.Ui;
 using System.Text.Json;
 using CutMap.Core.Store;
@@ -172,6 +173,14 @@ public sealed class MainForm : ThemedForm
         Controls.Add(split);
         Controls.Add(toolbar);
         Controls.Add(statusStrip);
+    
+        // 边界库（省/市/县共 25 MB GeoJSON）解析一次要 ~10 s。启动时在后台预热，
+        // 用户第一次打开拼接/下载窗口时命中的就是缓存——不预热那次打开会白等十秒。
+        _ = Task.Run(() =>
+        {
+            try { BoundaryStore.Locate(); }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[warmup] 边界库预热失败：{ex}"); }
+        });
     }
 
     // ---------------------------------------------------------------- 新建

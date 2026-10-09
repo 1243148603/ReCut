@@ -31,8 +31,15 @@ public sealed class DownloadForm : ThemedForm
     private readonly CheckBox _useBoundary = new();
     private readonly Button _pickBoundary = new();
     private readonly Label _boundarySummary = new();
-    private readonly BoundaryStore _boundaryStore = BoundaryStore.Locate();
+    // **惰性**：构造时解析 25 MB 边界 GeoJSON 会让「打开窗口」卡 10 秒
+    //（实测 10.8 s vs 0.8 s）。改成用到才取——配合 MainForm 启动时的后台预热，
+    // 真到用时命中的是缓存。
+    private BoundaryStore? _boundaryStoreLazy;
+    private BoundaryStore BoundaryData => _boundaryStoreLazy ??= BoundaryStore.Locate();
     private IReadOnlyList<BoundaryFeature> _boundaries = [];
+
+    /// <summary>按边界推导出的分幅（缓存：每个按键重算是卡顿的来源）。</summary>
+    private IReadOnlyList<DemTile>? _boundaryTiles;
 
     private static readonly string[] AreaLabels = ["西", "南", "东", "北"];
 
@@ -292,15 +299,16 @@ public sealed class DownloadForm : ThemedForm
 
     private void PickBoundary()
     {
-        if (_boundaryStore.IsEmpty)
+        if (BoundaryData.IsEmpty)
         {
-            MessageBox.Show(this, _boundaryStore.Describe(), "没有边界数据",
+            MessageBox.Show(this, BoundaryData.Describe(), "没有边界数据",
                             MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
-        using var picker = new BoundaryPickerForm(_boundaryStore);
+        using var picker = new BoundaryPickerForm(BoundaryData);
         if (picker.ShowDialog(this) != DialogResult.OK) return;
         _boundaries = picker.Selected;
+        _boundaryTiles = null;   // 选择变了，缓存作废
         _useBoundary.Checked = true;
 
         // 把手填区域也同步成边界的外接矩形——保存目录与任务参数里要记一个范围，
@@ -354,8 +362,11 @@ public sealed class DownloadForm : ThemedForm
             _boundarySummary.Text = "已选 " + string.Join("、", _boundaries.Select(b => b.Name));
             _pickBoundary.Enabled = true;
 
+            // 边界分幅只跟"选了哪些边界"有关，与四个数字框无关——**缓存**。
+            // 原来每次按键都重跑一遍 GDAL 布尔相交（边界有几万顶点），打字会卡。
             var byBounds = DemTileGrid.Enumerate(area);
-            _tiles = BoundaryTiles.Enumerate(_boundaries);
+            _boundaryTiles ??= BoundaryTiles.Enumerate(_boundaries);
+            _tiles = _boundaryTiles;
             if (_tiles.Count == 0)
             {
                 SetPreview("选中的边界落不到任何 1° 分幅上。", Color.Firebrick, []);

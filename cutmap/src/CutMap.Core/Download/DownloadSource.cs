@@ -61,6 +61,25 @@ public sealed record DownloadSource
         IsBuiltIn = true,
     };
 
+    /// <summary>
+    /// 同一个官方桶的**欧洲边缘节点**：数据、目录结构、文件大小与主源完全一致，
+    /// 只是走不同的接入点。国内路由到两个节点的质量会来回变——一个慢/抽风时
+    /// 换另一个。两个都是内置的官方源，不存在"静默换了别的数据源"（FR-16）。
+    /// </summary>
+    public const string CopernicusTemplateEu =
+        "https://copernicus-dem-30m.s3.eu-central-1.amazonaws.com/" +
+        "Copernicus_DSM_COG_10_{lat}_00_{lon}_00_DEM/" +
+        "Copernicus_DSM_COG_10_{lat}_00_{lon}_00_DEM.tif";
+
+    public static DownloadSource CopernicusEu { get; } = new()
+    {
+        Id = "copernicus-eu",
+        Name = "Copernicus GLO-30 官方源（AWS 欧洲节点）",
+        UrlTemplate = CopernicusTemplateEu,
+        Description = "同一个官方桶的欧洲接入点，与主源互为主备",
+        IsBuiltIn = true,
+    };
+
     /// <summary>把模板按分幅展开成真实 URL。</summary>
     public string Expand(DemTile tile) =>
         UrlTemplate

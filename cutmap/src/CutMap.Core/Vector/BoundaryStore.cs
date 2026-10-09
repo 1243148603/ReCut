@@ -71,6 +71,21 @@ public sealed class BoundaryStore
     /// 开发期它在仓库根，打包后与 exe 同级——两种情况都覆盖，所以不写死层数。
     /// 找不到时返回一个空库（<see cref="IsEmpty"/> 为真，<see cref="MissingFiles"/> 说明缺什么）。
     /// </summary>
+    /// <summary>
+    /// 进程内缓存。县级 geojson 有 21.7 MB，解析一次要几百毫秒——而每个用到
+    /// 边界的对话框（拼接/下载/预览页/边界选择器）构造时都会 Locate 一次，
+    /// 不缓存的话"打开窗口"会明显卡顿（同一个实例共享也顺带保证：一边导入的
+    /// 外部边界，另一边立刻能看到）。
+    /// </summary>
+    private static readonly Dictionary<string, BoundaryStore> Cache = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly object CacheLock = new();
+
+    /// <summary>重新解析（导入/删除边界数据之后调用）。</summary>
+    public static void InvalidateCache()
+    {
+        lock (CacheLock) Cache.Clear();
+    }
+
     public static BoundaryStore Locate(string? startDirectory = null)
     {
         var dir = new DirectoryInfo(startDirectory ?? AppContext.BaseDirectory);
@@ -78,7 +93,15 @@ public sealed class BoundaryStore
         {
             var candidate = Path.Combine(dir.FullName, "resources");
             if (BuiltInFiles.Any(f => File.Exists(Path.Combine(candidate, f.FileName))))
-                return Load(candidate);
+            {
+                lock (CacheLock)
+                {
+                    if (Cache.TryGetValue(candidate, out var cached)) return cached;
+                    var store = Load(candidate);
+                    Cache[candidate] = store;
+                    return store;
+                }
+            }
             dir = dir.Parent;
         }
         // 没找到也返回一个空库而不是 null：调用方要的是"有没有数据、缺哪个文件"，

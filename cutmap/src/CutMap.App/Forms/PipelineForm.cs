@@ -27,7 +27,11 @@ public sealed class PipelineForm : ThemedForm
     private readonly CheckBox _useBoundary = new();
     private readonly Button _pickBoundary = new();
     private readonly Label _boundarySummary = new();
-    private readonly BoundaryStore _boundaryStore = BoundaryStore.Locate();
+    // **惰性**：构造时解析 25 MB 边界 GeoJSON 会让「打开窗口」卡 10 秒
+    //（实测 10.8 s vs 0.8 s）。改成用到才取——配合 MainForm 启动时的后台预热，
+    // 真到用时命中的是缓存。
+    private BoundaryStore? _boundaryStoreLazy;
+    private BoundaryStore BoundaryData => _boundaryStoreLazy ??= BoundaryStore.Locate();
     private IReadOnlyList<BoundaryFeature> _boundaries = [];
 
     private readonly TextBox _root = new();
@@ -350,13 +354,13 @@ public sealed class PipelineForm : ThemedForm
 
     private void PickBoundary()
     {
-        if (_boundaryStore.IsEmpty)
+        if (BoundaryData.IsEmpty)
         {
-            MessageBox.Show(this, _boundaryStore.Describe(), "没有边界数据",
+            MessageBox.Show(this, BoundaryData.Describe(), "没有边界数据",
                             MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
-        using var picker = new BoundaryPickerForm(_boundaryStore);
+        using var picker = new BoundaryPickerForm(BoundaryData);
         if (picker.ShowDialog(this) != DialogResult.OK) return;
         _boundaries = picker.Selected;
         _useBoundary.Checked = true;

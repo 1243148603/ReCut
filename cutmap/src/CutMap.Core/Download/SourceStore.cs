@@ -24,6 +24,7 @@ public sealed class SourceStore
     public SourceStore()
     {
         _sources.Add(DownloadSource.CopernicusOfficial);
+        _sources.Add(DownloadSource.CopernicusEu);
         Load();
     }
 

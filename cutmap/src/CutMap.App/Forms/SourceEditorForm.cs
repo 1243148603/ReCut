@@ -1,4 +1,7 @@
+using System.Diagnostics;
+using System.Net.Http.Headers;
 using CutMap.Core.Download;
+using CutMap.Core.Geo;
 using CutMap.App.Ui;
 
 namespace CutMap.App.Forms;
@@ -53,6 +56,7 @@ public sealed class SourceEditorForm : ThemedForm
         side.Controls.Add(MakeButton("编辑…", Edit));
         side.Controls.Add(MakeButton("复制", Duplicate));
         side.Controls.Add(MakeButton("删除", Delete));
+        side.Controls.Add(MakeButton("测速…", TestSpeed));
 
         var buttons = new FlowLayoutPanel
         {
@@ -82,6 +86,63 @@ public sealed class SourceEditorForm : ThemedForm
         Controls.Add(hint);
         Controls.Add(buttons);
         AcceptButton = close;
+    }
+
+    /// <summary>
+    /// 给选中的源测速：固定取 N29_E106 的前 3 MB，报首字节延迟与吞吐。
+    /// 两个官方节点（默认 / 欧洲）在各地路由质量会来回变，**别猜，量一下再选**。
+    /// </summary>
+    private async void TestSpeed()
+    {
+        if (_list.SelectedItems.Count == 0 ||
+            _list.SelectedItems[0].Tag is not DownloadSource source)
+        {
+            MessageBox.Show(this, "先在列表里选中一条源。", "测速",
+                            MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        var probe = new DemTile(29, 106, "N29", "E106", new BBox(106, 29, 107, 30));
+        var url = source.Expand(probe);
+        Cursor = Cursors.WaitCursor;
+        try
+        {
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+            using var request = new HttpRequestMessage(HttpMethod.Get, url);
+            request.Headers.Range = new RangeHeaderValue(0, 3L * 1024 * 1024 - 1);
+
+            var sw = Stopwatch.StartNew();
+            using var response = await http.SendAsync(request,
+                HttpCompletionOption.ResponseHeadersRead);
+            var firstByte = sw.Elapsed;
+            var bytes = (await response.Content.ReadAsByteArrayAsync()).Length;
+            sw.Stop();
+
+            var mb = bytes / 1048576.0;
+            var seconds = Math.Max(sw.Elapsed.TotalSeconds, 0.001);
+            var text = string.Join(Environment.NewLine, [
+                source.Name,
+                url,
+                "",
+                $"HTTP {(int)response.StatusCode}",
+                $"首字节 {firstByte.TotalSeconds:F2} s",
+                $"{mb:F1} MB / {sw.Elapsed.TotalSeconds:F1} s = {mb / seconds:F1} MB/s",
+                "",
+                "（单连接取 3 MB 的抽样；整批下载是 4 幅并发，会更快）",
+            ]);
+            MessageBox.Show(this, text,
+                "测速结果", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this,
+                            $"测速失败：{ex.Message}{Environment.NewLine}{Environment.NewLine}{url}",
+                            "测速", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+        finally
+        {
+            Cursor = Cursors.Default;
+        }
     }
 
     private Button MakeButton(string text, Action action)

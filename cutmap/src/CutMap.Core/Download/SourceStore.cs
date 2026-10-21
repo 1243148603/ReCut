@@ -14,6 +14,7 @@ namespace CutMap.Core.Download;
 public sealed class SourceStore
 {
     private readonly List<DownloadSource> _sources = [];
+    private readonly string _filePath;
 
     private static readonly JsonSerializerOptions WriteOptions = new()
     {
@@ -21,8 +22,9 @@ public sealed class SourceStore
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
 
-    public SourceStore()
+    public SourceStore(string? filePath = null)
     {
+        _filePath = filePath ?? AppPaths.SourcesFile;
         _sources.Add(DownloadSource.CopernicusOfficial);
         _sources.Add(DownloadSource.CopernicusEu);
         Load();
@@ -81,14 +83,26 @@ public sealed class SourceStore
     {
         try
         {
-            if (!File.Exists(AppPaths.SourcesFile)) return;
+            if (!File.Exists(_filePath)) return;
             var loaded = JsonSerializer.Deserialize<List<DownloadSource>>(
-                File.ReadAllText(AppPaths.SourcesFile));
+                File.ReadAllText(_filePath));
             if (loaded is null) return;
 
             foreach (var source in loaded)
             {
-                if (source.IsBuiltIn) continue;   // 内置源以代码里的为准，不吃磁盘上的旧版本
+                var builtin = _sources.FindIndex(s => s.IsBuiltIn && s.Id == source.Id);
+                if (builtin >= 0)
+                {
+                    // 模板由代码维护，用户开关和最近成败记录由配置维护。
+                    _sources[builtin] = _sources[builtin] with
+                    {
+                        Enabled = source.Enabled,
+                        LastSuccess = source.LastSuccess,
+                        LastError = source.LastError,
+                    };
+                    continue;
+                }
+                if (source.IsBuiltIn) continue;
                 if (_sources.Any(s => s.Id == source.Id)) continue;
                 _sources.Add(source);
             }
@@ -103,10 +117,8 @@ public sealed class SourceStore
     {
         try
         {
-            // 内置源不写盘：它的定义属于代码，写出去反而会在升级时留下过期的旧模板。
-            var custom = _sources.Where(s => !s.IsBuiltIn).ToList();
-            File.WriteAllText(AppPaths.SourcesFile,
-                              JsonSerializer.Serialize(custom, WriteOptions),
+            File.WriteAllText(_filePath,
+                              JsonSerializer.Serialize(_sources, WriteOptions),
                               new System.Text.UTF8Encoding(false));
         }
         catch (Exception)

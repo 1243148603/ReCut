@@ -1,0 +1,44 @@
+一、只勾前端产物（独立打包，不重跑切片）
+  瓦片：0–12 级，共 17 个
+  已写 D:\Map\cutmap\_gate\ctb\tiles\layer.json
+  已写 D:\Map\cutmap\_gate\ctb\tiles\README.txt
+  打包 19 个文件 → tiles_tiles.zip
+  完成：D:\Map\cutmap\_gate\acceptance-package\front_only\tiles_tiles.zip（0 MB）
+  产物：前端瓦片 17 个，瓦片 zip
+  [OK] layer.json 已产出
+  [OK] 部署说明已产出
+  [OK] 瓦片 zip 已产出
+  [OK] 未产出算法 json
+  [OK] format 是 heightmap-1.0: heightmap-1.0（期望 heightmap-1.0）
+  [OK] scheme 是 tms: tms（期望 tms）
+  [OK] 扩展名小写 watermask: watermask（期望 watermask）
+  layer.json：maxzoom=12，bounds=[105.3809, 28.5205, 105.4688, 28.6084]
+  [OK] maxzoom 与目录一致: 12（期望 12）
+  [OK] bounds 与瓦片包络一致
+
+二、只勾算法产物（不产出瓦片、不碰切片）
+  已写 D:\Map\cutmap\_gate\acceptance-package-input\dem.json
+  打包 2 个文件 → dem_algo.zip
+  完成：D:\Map\cutmap\_gate\acceptance-package\algo_only\dem_algo.zip（0 MB）
+  产物：算法数据，算法 zip
+  [OK] 未产出 layer.json
+  [OK] 未产出瓦片 zip
+  [OK] 算法 zip 已产出
+  [OK] 元数据 json 已自动补出
+
+三、两套产物同时，各自独立 zip
+  瓦片：0–12 级，共 17 个
+  已写 D:\Map\cutmap\_gate\ctb\tiles\layer.json
+  已写 D:\Map\cutmap\_gate\ctb\tiles\README.txt
+  算法元数据已存在，保留原样：D:\Map\cutmap\_gate\acceptance-package-input\dem.json
+  打包 19 个文件 → tiles_tiles.zip
+  完成：D:\Map\cutmap\_gate\acceptance-package\both\tiles_tiles.zip（0 MB）
+  打包 2 个文件 → dem_algo.zip
+  完成：D:\Map\cutmap\_gate\acceptance-package\both\dem_algo.zip（0 MB）
+  产物：前端瓦片 17 个，算法数据，瓦片 zip，算法 zip
+  [OK] 瓦片 zip
+  [OK] 算法 zip
+  [OK] 瓦片 zip 非空
+  [OK] 算法 zip 非空
+
+PASS  M3：打包与双产物

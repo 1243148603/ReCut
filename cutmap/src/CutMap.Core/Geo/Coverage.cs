@@ -53,10 +53,44 @@ public static class Coverage
             problems.Add(Describe("北", northGap, MetresPerDegreeLat));
 
         var covered = problems.Count == 0;
+        if (covered && FindHole(inputs, target, toleranceX, toleranceY) is { } hole)
+        {
+            covered = false;
+            problems.Add($"输入 DEM 中间存在未覆盖区域：{hole}。请补齐缺失分幅。");
+        }
         if (covered)
             problems.Add($"输入覆盖 {union}，目标 {target} 在其内。");
 
         return new CoverageResult(covered, union, westGap, southGap, eastGap, northGap, problems);
+    }
+
+    // 沿输入边缘分割成竖条，每条合并纬度区间；外接矩形包住目标不代表没有缺幅。
+    private static BBox? FindHole(IReadOnlyList<RasterInfo> inputs, BBox target,
+                                  double toleranceX, double toleranceY)
+    {
+        var boxes = inputs.Select(i => i.Extent).Select(b => new BBox(
+            b.West - toleranceX, b.South - toleranceY,
+            b.East + toleranceX, b.North + toleranceY)).ToArray();
+        var edges = boxes.SelectMany(b => new[] { b.West, b.East })
+            .Where(x => x > target.West && x < target.East)
+            .Append(target.West).Append(target.East).Distinct().Order().ToArray();
+        for (var i = 0; i + 1 < edges.Length; i++)
+        {
+            var x = (edges[i] + edges[i + 1]) / 2;
+            var north = target.South;
+            foreach (var b in boxes.Where(b => b.West <= x && b.East >= x)
+                                   .OrderBy(b => b.South))
+            {
+                if (b.North <= north) continue;
+                if (b.South > north)
+                    return new BBox(edges[i], north, edges[i + 1], Math.Min(b.South, target.North));
+                north = Math.Max(north, b.North);
+                if (north >= target.North) break;
+            }
+            if (north < target.North)
+                return new BBox(edges[i], north, edges[i + 1], target.North);
+        }
+        return null;
     }
 
     /// <summary>

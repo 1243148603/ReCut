@@ -130,6 +130,11 @@ public static class Downloader
                 return new TileResult(tile, TileOutcome.NotFound, 0, null);
 
             var partPath = destination + ".part";
+            if (File.Exists(partPath) && new FileInfo(partPath).Length == remoteLength)
+            {
+                File.Move(partPath, destination, overwrite: true);
+                return new TileResult(tile, TileOutcome.Downloaded, 0, null);
+            }
             var alreadyHave = File.Exists(destination) ? new FileInfo(destination).Length : -1;
             if (alreadyHave == remoteLength)
                 return new TileResult(tile, TileOutcome.Skipped, 0, null);
@@ -186,7 +191,7 @@ public static class Downloader
             request, HttpCompletionOption.ResponseHeadersRead, cancellation).ConfigureAwait(false);
 
         if (response.StatusCode == HttpStatusCode.NotFound) return null;
-        if (!response.IsSuccessStatusCode)
+        if (!response.IsSuccessStatusCode || response.Content.Headers.ContentLength is null)
         {
             // 有些对象存储不支持 HEAD。退回用 Range 取 1 字节，从 Content-Range 里读总长。
             using var probe = new HttpRequestMessage(HttpMethod.Get, url);
@@ -196,8 +201,10 @@ public static class Downloader
             if (probeResponse.StatusCode == HttpStatusCode.NotFound) return null;
             if (!probeResponse.IsSuccessStatusCode)
                 throw new HttpRequestException($"HEAD 返回 {(int)response.StatusCode} {response.ReasonPhrase}");
-            return probeResponse.Content.Headers.ContentRange?.Length
-                   ?? probeResponse.Content.Headers.ContentLength;
+            var length = probeResponse.StatusCode == HttpStatusCode.PartialContent
+                ? probeResponse.Content.Headers.ContentRange?.Length
+                : probeResponse.Content.Headers.ContentLength;
+            return length ?? throw new HttpRequestException("下载源未提供文件总长度，无法校验完整性。");
         }
 
         return response.Content.Headers.ContentLength;
@@ -222,6 +229,9 @@ public static class Downloader
         // 服务器不支持 Range 时会返回 200 并从头开始——那就得丢弃 .part 重写，
         // 否则会把整份数据追加到半个文件后面。
         var appending = resumeFrom > 0 && response.StatusCode == HttpStatusCode.PartialContent;
+        if (response.StatusCode == HttpStatusCode.PartialContent &&
+            response.Content.Headers.ContentRange?.From != resumeFrom)
+            throw new IOException("下载源返回的 Content-Range 起点与续传位置不一致。");
         var mode = appending ? FileMode.Append : FileMode.Create;
 
         await using var file = new FileStream(

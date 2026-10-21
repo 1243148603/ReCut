@@ -192,7 +192,6 @@ public static class Packager
         // 目标路径上留了半个 zip——从文件名看不出它是半成品，这种"看起来能交付"
         // 的残留不能留（.part 的同一思路，下载那边已经这么做了）。
         var tmpPath = zipPath + ".tmp";
-        if (File.Exists(zipPath)) File.Delete(zipPath);
         if (File.Exists(tmpPath)) File.Delete(tmpPath);
 
         onLog?.Invoke($"打包 {files.Count:N0} 个文件 → {Path.GetFileName(zipPath)}");

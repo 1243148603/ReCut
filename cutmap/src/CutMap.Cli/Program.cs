@@ -16,6 +16,8 @@ internal static class Program
 
         switch (args[0])
         {
+            case "acceptance-gate":
+                return AcceptanceGate.Run(RepoRoot.Locate());
             case "version":
                 Console.WriteLine($"GDAL {GdalRuntime.ReleaseName()}");
                 Console.WriteLine($"PROJ_DATA {GdalRuntime.ProjDataPath() ?? "(unset)"}");
@@ -138,6 +140,7 @@ internal static class Program
                                      校验瓦片集能否被 Cesium 加载
 
             回归闸门（改了瓦片网格或 GDAL 版本之后跑）
+              acceptance-gate        验收缺陷回归：缺幅、源持久化、HTTP 续传、打包取消
               grid-gate              瓦片网格算术对基线（15 层 223,495）
               warp-gate              30 幅拼接，对基线校验和（期望 58775）
               ctb-gate               ctb-tile 子进程、实时进度、取消、退出码陷阱

@@ -1,0 +1,19 @@
+[PASS] 完整九幅允许提交
+[PASS] 中间缺一幅拒绝提交
+[PASS] 仅两角不能冒充全域覆盖
+[PASS] 外沿缺幅拒绝提交
+[PASS] 相邻分幅接缝允许提交
+[PASS] 内置源禁用与失败原因重启保留
+[PASS] 内置模板升级以代码为准
+[PASS] 内置源不能删除
+[PASS] 自定义源重启保留
+[PASS] 已完整 part 直接转正
+[PASS] Range 续传仅下载剩余字节
+[PASS] HEAD 无长度时用 Range 探测
+[PASS] 无总长度如实失败，不能当 404
+[PASS] 只有真实 404 才报远端缺失
+[PASS] 错误 Range 起点拒绝写入
+[PASS] 取消打包及时返回
+[PASS] 取消打包保留旧 zip
+[PASS] 取消打包清理临时文件
+证据目录：D:\Map\cutmap\_gate\acceptance\7e42cd64d3854af7b433a2d3b3f48de8

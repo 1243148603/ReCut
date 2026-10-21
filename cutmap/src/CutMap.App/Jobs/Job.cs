@@ -52,6 +52,7 @@ public abstract class Job
     public string? FailureReason { get; set; }
     public string? ProductPath { get; set; }
     public TimeSpan Elapsed { get; set; }
+    public string? LogPath { get; set; }
 
     /// <summary>
     /// 排队项被"挂起"（PRD FR-11）：挂起的任务不被调度，但仍留在队列里。

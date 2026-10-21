@@ -4,6 +4,7 @@ using System.Text;
 using CutMap.Core.Download;
 using CutMap.Core.Geo;
 using CutMap.Core.Packaging;
+using CutMap.Core.Store;
 using OSGeo.GDAL;
 
 namespace CutMap.Cli;
@@ -91,6 +92,38 @@ internal static class AcceptanceGate
         catch (OperationCanceledException) { Check("取消打包及时返回", true); }
         Check("取消打包保留旧 zip", File.ReadAllBytes(zipPath).SequenceEqual(oldZip));
         Check("取消打包清理临时文件", !File.Exists(zipPath + ".tmp"));
+
+        var taskPath = Path.Combine(work, "task.log");
+        using (var taskLog = new TaskLog(taskPath))
+            Parallel.For(0, 20000, i => taskLog.Write($"line-{i}"));
+        Check("并发日志先写磁盘，20000 条完整保留", File.ReadAllLines(taskPath).Length == 20000);
+        var historyPath = Path.Combine(work, "history.json");
+        new HistoryStore(historyPath).Add(new HistoryEntry { Id = "log-test", Type = "测试", StartedAt = DateTimeOffset.Now,
+            Status = "成功", LogPath = taskPath });
+        Check("历史重载后仍可定位独立任务日志", new HistoryStore(historyPath).All[0].LogPath == taskPath);
+        var blocked = Path.Combine(work, "blocked.json");
+        Directory.CreateDirectory(blocked);
+        var failedStore = new SourceStore(blocked);
+        try { failedStore.Save(custom); Check("配置保存失败可见", false); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        { Check("配置保存失败可见且回滚内存", failedStore.ById(custom.Id) is null); }
+        using (var pause = new PauseToken())
+        using (var cancelPause = new CancellationTokenSource(100))
+        {
+            pause.Pause();
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            try { Task.Run(() => pause.WaitIfPaused(cancelPause.Token)).GetAwaiter().GetResult(); Check("暂停取消响应", false); }
+            catch (OperationCanceledException) { Check("暂停取消立即退出", watch.Elapsed.TotalSeconds < 2); }
+        }
+        using (var stalled = new FixtureServer())
+        {
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            var timeoutResult = Downloader.RunAsync(custom with { UrlTemplate = stalled.Url + "stall/{name}" }, [tile],
+                Path.Combine(work, "timeout"), null, null, null, CancellationToken.None, 1, TimeSpan.FromMilliseconds(100))
+                .GetAwaiter().GetResult();
+            Check("服务端不回响应时有限重试后明确超时", !timeoutResult.Succeeded && watch.Elapsed.TotalSeconds < 10 &&
+                timeoutResult.Results[0].Error!.Contains("超时"));
+        }
         Console.WriteLine($"证据目录：{work}");
         return failed == 0 ? 0 : 1;
     }
@@ -122,6 +155,7 @@ internal static class AcceptanceGate
                     var first = await reader.ReadLineAsync() ?? "";
                     var head = first.StartsWith("HEAD", StringComparison.Ordinal);
                     var mode = first.Split(' ')[1].Split('/')[1];
+                    if (mode == "stall") { await Task.Delay(Timeout.Infinite, _stop.Token); continue; }
                     string? range = null;
                     while (await reader.ReadLineAsync() is { Length: > 0 } line)
                         if (line.StartsWith("Range:", StringComparison.OrdinalIgnoreCase)) range = line;

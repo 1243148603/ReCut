@@ -319,8 +319,12 @@ public sealed class MainForm : ThemedForm
     private void RunJob(Job job)
     {
         var startedAt = DateTimeOffset.Now;
+        TaskLog? taskLog = null;
         try
         {
+            job.LogPath = Path.Combine(AppPaths.DataDirectory, "logs", "task-" + Guid.NewGuid().ToString("N") + ".log");
+            taskLog = new TaskLog(job.LogPath);
+            taskLog.Write($"{job.TypeName} {job.Display}\n参数：{job.ParametersJson}");
             var result = job.Execute(
                 _ctbHome,
                 onProgress: p => _pump.Post(() =>
@@ -329,7 +333,11 @@ public sealed class MainForm : ThemedForm
                     _progress.Value = Math.Clamp((int)(p * 100), 0, 100);
                     UpdateJobRow(job);
                 }),
-                onLog: line => _pump.Post(() => AppendLog("  " + line)),
+                onLog: line =>
+                {
+                    taskLog.Write(line);
+                    _pump.Post(() => AppendLog("  " + line));
+                },
                 cancellation: job.Cancellation.Token);
 
             if (result.Succeeded)
@@ -367,6 +375,9 @@ public sealed class MainForm : ThemedForm
         }
         finally
         {
+            try { taskLog?.Write($"终态：{JobStatusText.Of(job.Status)} {job.StatusDetail}"); }
+            catch (IOException ex) { _pump.Post(() => AppendLog("任务日志写入失败：" + ex.Message)); }
+            finally { taskLog?.Dispose(); }
             RecordHistory(job, startedAt);
             _pump.Post(() =>
             {
@@ -463,6 +474,7 @@ public sealed class MainForm : ThemedForm
                 ProductPath = job.ProductPath,
                 Failure = job.FailureReason,
                 ParametersJson = job.ParametersJson,
+                LogPath = job.LogPath,
             });
         }
         catch (Exception ex)

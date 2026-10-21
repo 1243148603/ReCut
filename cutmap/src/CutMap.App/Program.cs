@@ -13,6 +13,9 @@ internal static class Program
     [STAThread]
     private static void Main(string[] args)
     {
+        Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+        Application.ThreadException += (_, e) => MessageBox.Show(
+            "操作失败：" + e.Exception.Message, "CutMap", MessageBoxButtons.OK, MessageBoxIcon.Error);
         if (args.Contains("--layout-check", StringComparer.OrdinalIgnoreCase))
         {
             RunLayoutCheck();

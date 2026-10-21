@@ -43,6 +43,9 @@ public sealed record HistoryEntry
     /// <summary>任务参数，用于回填与重跑。</summary>
     [JsonPropertyName("parameters")]
     public string ParametersJson { get; init; } = "{}";
+
+    [JsonPropertyName("log_path")]
+    public string? LogPath { get; init; }
 }
 
 /// <summary>
@@ -56,6 +59,7 @@ public sealed class HistoryStore
     private const int MaxEntries = 500;
 
     private readonly List<HistoryEntry> _entries = [];
+    private readonly string _filePath;
 
     private static readonly JsonSerializerOptions WriteOptions = new()
     {
@@ -63,7 +67,7 @@ public sealed class HistoryStore
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
 
-    public HistoryStore() => Load();
+    public HistoryStore(string? filePath = null) { _filePath = filePath ?? AppPaths.HistoryFile; Load(); }
 
     /// <summary>最近的在最前。</summary>
     public IReadOnlyList<HistoryEntry> All => [.. _entries.OrderByDescending(e => e.StartedAt)];
@@ -102,9 +106,9 @@ public sealed class HistoryStore
     {
         try
         {
-            if (!File.Exists(AppPaths.HistoryFile)) return;
+            if (!File.Exists(_filePath)) return;
             var loaded = JsonSerializer.Deserialize<List<HistoryEntry>>(
-                File.ReadAllText(AppPaths.HistoryFile));
+                File.ReadAllText(_filePath));
             if (loaded is not null) _entries.AddRange(loaded);
         }
         catch (Exception)
@@ -115,15 +119,6 @@ public sealed class HistoryStore
 
     private void Persist()
     {
-        try
-        {
-            File.WriteAllText(AppPaths.HistoryFile,
-                              JsonSerializer.Serialize(_entries, WriteOptions),
-                              new System.Text.UTF8Encoding(false));
-        }
-        catch (Exception)
-        {
-            // 写不进去（磁盘满、权限）不该让当前任务失败。
-        }
+        AtomicFile.Write(_filePath, JsonSerializer.Serialize(_entries, WriteOptions));
     }
 }

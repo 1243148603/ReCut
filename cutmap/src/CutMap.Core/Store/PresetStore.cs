@@ -151,21 +151,12 @@ public sealed class PresetStore
 
     private void Persist()
     {
-        try
-        {
             var payload = new Persisted
             {
                 Clip = [.. _clip.Where(p => !p.IsBuiltIn)],
                 Task = [.. _tasks.Where(p => !p.IsBuiltIn)],
             };
-            File.WriteAllText(AppPaths.UserPresetsFile,
-                              JsonSerializer.Serialize(payload, WriteOptions),
-                              new System.Text.UTF8Encoding(false));
-        }
-        catch (Exception)
-        {
-            // 同上：写不进去不该让当前操作失败。
-        }
+            AtomicFile.Write(AppPaths.UserPresetsFile, JsonSerializer.Serialize(payload, WriteOptions));
     }
 
     private sealed record Persisted

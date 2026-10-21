@@ -15,6 +15,7 @@ public sealed class SourceStore
 {
     private readonly List<DownloadSource> _sources = [];
     private readonly string _filePath;
+    private List<DownloadSource> _lastSaved = [];
 
     private static readonly JsonSerializerOptions WriteOptions = new()
     {
@@ -28,6 +29,7 @@ public sealed class SourceStore
         _sources.Add(DownloadSource.CopernicusOfficial);
         _sources.Add(DownloadSource.CopernicusEu);
         Load();
+        _lastSaved = [.. _sources];
     }
 
     public IReadOnlyList<DownloadSource> All => _sources;
@@ -117,13 +119,14 @@ public sealed class SourceStore
     {
         try
         {
-            File.WriteAllText(_filePath,
-                              JsonSerializer.Serialize(_sources, WriteOptions),
-                              new System.Text.UTF8Encoding(false));
+            AtomicFile.Write(_filePath, JsonSerializer.Serialize(_sources, WriteOptions));
+            _lastSaved = [.. _sources];
         }
-        catch (Exception)
+        catch
         {
-            // 写不进去（磁盘满、权限）不该让当前操作失败——内存里的改动依然有效。
+            _sources.Clear();
+            _sources.AddRange(_lastSaved);
+            throw;
         }
     }
 }

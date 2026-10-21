@@ -57,7 +57,8 @@ public static class Downloader
         IProgress<(int Done, int Total, string Current, long Bytes)>? progress,
         Action<string>? onLog,
         CancellationToken cancellation,
-        int parallelism = 4)
+        int parallelism = 4,
+        TimeSpan? ioTimeout = null)
     {
         Directory.CreateDirectory(saveDirectory);
 
@@ -90,7 +91,7 @@ public static class Downloader
                 var destination = Path.Combine(saveDirectory, tile.Name + ".tif");
                 var url = source.Expand(tile);
 
-                var result = await FetchOneAsync(http, url, destination, tile, pause, ct)
+                var result = await FetchOneAsync(http, url, destination, tile, pause, ct, ioTimeout ?? TimeSpan.FromSeconds(30))
                     .ConfigureAwait(false);
                 results[i] = result;
 
@@ -121,11 +122,17 @@ public static class Downloader
 
     private static async Task<TileResult> FetchOneAsync(
         HttpClient http, string url, string destination, DemTile tile,
-        PauseToken? pause, CancellationToken cancellation)
+        PauseToken? pause, CancellationToken cancellation, TimeSpan timeout)
     {
         try
         {
-            var remoteLength = await HeadLengthAsync(http, url, cancellation).ConfigureAwait(false);
+            long? remoteLength = null;
+            for (var attempt = 1; attempt <= MaxAttempts; attempt++)
+            {
+                try { remoteLength = await HeadLengthAsync(http, url, cancellation, timeout).ConfigureAwait(false); break; }
+                catch (Exception ex) when (attempt < MaxAttempts && ex is HttpRequestException or TimeoutException)
+                { await Task.Delay(TimeSpan.FromSeconds(attempt), cancellation).ConfigureAwait(false); }
+            }
             if (remoteLength is null)
                 return new TileResult(tile, TileOutcome.NotFound, 0, null);
 
@@ -149,7 +156,7 @@ public static class Downloader
                 try
                 {
                     var written = await DownloadToPartAsync(
-                        http, url, partPath, resumeFrom, pause, cancellation).ConfigureAwait(false);
+                        http, url, partPath, resumeFrom, pause, cancellation, timeout).ConfigureAwait(false);
                     var finalLength = new FileInfo(partPath).Length;
                     if (finalLength != remoteLength)
                         throw new IOException($"大小不符：本地 {finalLength} / 远端 {remoteLength}");
@@ -184,11 +191,10 @@ public static class Downloader
 
     /// <summary>取远端长度。返回 null 表示这一幅不存在（404）。</summary>
     private static async Task<long?> HeadLengthAsync(
-        HttpClient http, string url, CancellationToken cancellation)
+        HttpClient http, string url, CancellationToken cancellation, TimeSpan timeout)
     {
         using var request = new HttpRequestMessage(HttpMethod.Head, url);
-        using var response = await http.SendAsync(
-            request, HttpCompletionOption.ResponseHeadersRead, cancellation).ConfigureAwait(false);
+        using var response = await SendHeadersAsync(http, request, cancellation, timeout).ConfigureAwait(false);
 
         if (response.StatusCode == HttpStatusCode.NotFound) return null;
         if (!response.IsSuccessStatusCode || response.Content.Headers.ContentLength is null)
@@ -196,8 +202,7 @@ public static class Downloader
             // 有些对象存储不支持 HEAD。退回用 Range 取 1 字节，从 Content-Range 里读总长。
             using var probe = new HttpRequestMessage(HttpMethod.Get, url);
             probe.Headers.Range = new RangeHeaderValue(0, 0);
-            using var probeResponse = await http.SendAsync(
-                probe, HttpCompletionOption.ResponseHeadersRead, cancellation).ConfigureAwait(false);
+            using var probeResponse = await SendHeadersAsync(http, probe, cancellation, timeout).ConfigureAwait(false);
             if (probeResponse.StatusCode == HttpStatusCode.NotFound) return null;
             if (!probeResponse.IsSuccessStatusCode)
                 throw new HttpRequestException($"HEAD 返回 {(int)response.StatusCode} {response.ReasonPhrase}");
@@ -216,14 +221,13 @@ public static class Downloader
     /// </summary>
     private static async Task<long> DownloadToPartAsync(
         HttpClient http, string url, string partPath, long resumeFrom,
-        PauseToken? pause, CancellationToken cancellation)
+        PauseToken? pause, CancellationToken cancellation, TimeSpan timeout)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         if (resumeFrom > 0)
             request.Headers.Range = new RangeHeaderValue(resumeFrom, null);
 
-        using var response = await http.SendAsync(
-            request, HttpCompletionOption.ResponseHeadersRead, cancellation).ConfigureAwait(false);
+        using var response = await SendHeadersAsync(http, request, cancellation, timeout).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
 
         // 服务器不支持 Range 时会返回 200 并从头开始——那就得丢弃 .part 重写，
@@ -246,7 +250,12 @@ public static class Downloader
             // 暂停点就在块与块之间：这是"运行中暂停"能成立的全部原因。
             pause?.WaitIfPaused(cancellation);
 
-            var read = await stream.ReadAsync(buffer, cancellation).ConfigureAwait(false);
+            using var readTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+            readTimeout.CancelAfter(timeout);
+            int read;
+            try { read = await stream.ReadAsync(buffer, readTimeout.Token).ConfigureAwait(false); }
+            catch (OperationCanceledException) when (!cancellation.IsCancellationRequested)
+            { throw new TimeoutException("下载数据读取超时，可重跑任务续传。"); }
             if (read <= 0) break;
 
             await file.WriteAsync(buffer.AsMemory(0, read), cancellation).ConfigureAwait(false);
@@ -254,5 +263,15 @@ public static class Downloader
         }
 
         return writtenThisRun;
+    }
+
+    private static async Task<HttpResponseMessage> SendHeadersAsync(HttpClient http, HttpRequestMessage request,
+        CancellationToken cancellation, TimeSpan timeout)
+    {
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+        deadline.CancelAfter(timeout);
+        try { return await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, deadline.Token).ConfigureAwait(false); }
+        catch (OperationCanceledException) when (!cancellation.IsCancellationRequested)
+        { throw new TimeoutException("下载源响应超时，请检查网络后重试。"); }
     }
 }

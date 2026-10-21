@@ -64,6 +64,7 @@ public sealed class HistoryForm : ThemedForm
         side.Controls.Add(_rerun);
         side.Controls.Add(MakeButton("删除", Delete));
         side.Controls.Add(MakeButton("清空全部", ClearAll));
+        side.Controls.Add(MakeButton("导出日志…", ExportTaskLog));
 
         _detail.Dock = DockStyle.Bottom;
         _detail.Height = 76;
@@ -88,6 +89,18 @@ public sealed class HistoryForm : ThemedForm
         Controls.Add(_detail);
         Controls.Add(buttons);
         CancelButton = close;
+    }
+
+    private void ExportTaskLog()
+    {
+        if (_list.SelectedItems.Count == 0 || _list.SelectedItems[0].Tag is not HistoryEntry entry) return;
+        if (entry.LogPath is null || !File.Exists(entry.LogPath))
+        {
+            MessageBox.Show(this, "这条历史没有可用的独立任务日志。", "导出日志");
+            return;
+        }
+        using var dialog = new SaveFileDialog { Filter = "日志 (*.log)|*.log", FileName = $"{entry.Type}-{entry.Id}.log" };
+        if (dialog.ShowDialog(this) == DialogResult.OK) File.Copy(entry.LogPath, dialog.FileName, overwrite: true);
     }
 
     private Button MakeButton(string text, Action action)

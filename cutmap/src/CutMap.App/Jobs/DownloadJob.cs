@@ -60,10 +60,12 @@ public sealed class DownloadJob : Job
 
         // FR-16：逐源记一次成败，便于判断内网镜像还活着没有——
         // 源管理界面会把失败原因挂在那一行上。
-        new SourceStore().RecordOutcome(
-            Source.Id,
-            outcome.Succeeded,
-            outcome.Succeeded ? null : outcome.Summary);
+        try
+        {
+            new SourceStore().RecordOutcome(Source.Id, outcome.Succeeded, outcome.Succeeded ? null : outcome.Summary);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        { onLog("下载结果已保留，但下载源状态保存失败：" + ex.Message); }
 
         var summary = outcome.Summary;
         if (!outcome.Succeeded)

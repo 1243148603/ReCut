@@ -146,6 +146,23 @@ internal static class Gates
         Console.WriteLine($"  层级目录: {string.Join(", ", levels)}");
         Console.WriteLine($"  用时: {result.Elapsed.TotalSeconds:F2} s");
 
+        // ---- 中文路径：ctb-tile 是原生程序，argv 会被 CRT 转成本地代码页，
+        //      含非 ASCII 的路径会「目录存在也报不存在」。用 ASCII 别名绕过后必须可切。
+        Console.WriteLine();
+        Console.WriteLine("中文路径测试：输入文件名与输出目录都含中文");
+        var unicodeInputDir = Path.Combine(workDir, "中文输入");
+        Directory.CreateDirectory(unicodeInputDir);
+        var unicodeInput = Path.Combine(unicodeInputDir, "地形数据.tif");
+        File.Copy(small, unicodeInput, overwrite: true);
+        var unicodeOut = Path.Combine(workDir, "中文输出", "cesium_terrain");
+        var unicode = CtbTileRunner.Run(home, new CtbTileRequest(unicodeInput, unicodeOut));
+        var unicodeTiles = Directory.Exists(unicodeOut)
+            ? Directory.GetFiles(unicodeOut, "*.terrain", SearchOption.AllDirectories).Length
+            : 0;
+        ok &= Check("中文路径切片无 Error:", unicode.SawError ? unicode.ErrorLine ?? "有" : "无", "无",
+                    !unicode.SawError);
+        ok &= Check("中文路径瓦片数", unicodeTiles.ToString(), ">0", unicodeTiles > 0);
+
         // ---- 取消：切片中途喊停，验证子进程真的终止 ----
         // PRD 验收 #4 明确要求"切片中途取消后子进程确实终止"。
         // 做法：让同一个 60×60 的小栅格切到很深的层级——按瓦片数而不是按栅格大小

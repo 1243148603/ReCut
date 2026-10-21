@@ -50,7 +50,9 @@ public sealed record CtbTileRequest(
     /// <summary>深端（最细层）。null = 由 CTB 按分辨率自动决定。</summary>
     int? StartZoom = null,
     /// <summary>浅端（最粗层）。null = 0。</summary>
-    int? EndZoom = null);
+    int? EndZoom = null,
+    /// <summary>线程数（-c）。null = CTB 默认（CPU 数）。浅层独立进程用少量线程，避免多个大分配并发。</summary>
+    int? ThreadCount = null);
 
 public sealed record CtbTileResult(
     /// <summary>进程的真实退出码。**不可单独用于判成败**——见类型注释。</summary>
@@ -121,7 +123,13 @@ public static class CtbTileRunner
         // ctb-tile 在输出目录不存在时会报错，不会自己建。
         Directory.CreateDirectory(request.OutputDirectory);
 
-        var args = new List<string> { "-o", request.OutputDirectory };
+        // ctb-tile 是原生程序，中文路径会在 argv 转换中失真（目录存在也报
+        // "The output directory does not exist"）。先把两边换到纯 ASCII 别名。
+        using var alias = NativePathAlias.For(request.InputPath, request.OutputDirectory);
+        var inputPath = alias?.MapFile(request.InputPath) ?? request.InputPath;
+        var outputDirectory = alias?.MapDirectory(request.OutputDirectory) ?? request.OutputDirectory;
+
+        var args = new List<string> { "-o", outputDirectory };
         // **给 warp 内存设上限。** 不设时 GDAL 会按缓存上限算 chunk，实测在某个
         // 交汇路径上会一次性申请整幅栅格那么大的缓冲（17640×14760×4 ≈ 1.0 GB），
         // 20 线程 × 这个尺寸在 16 GB 机器上偶发 "cannot allocate ... bytes" →
@@ -143,7 +151,12 @@ public static class CtbTileRunner
             args.Add("-e");
             args.Add(e.ToString(CultureInfo.InvariantCulture));
         }
-        args.Add(request.InputPath);
+        if (request.ThreadCount is { } threads)
+        {
+            args.Add("-c");
+            args.Add(threads.ToString(CultureInfo.InvariantCulture));
+        }
+        args.Add(inputPath);
 
         var psi = new ProcessStartInfo
         {

@@ -36,12 +36,20 @@ public sealed class MosaicJob : Job
             ? $"{InputPaths.Count} 幅 → {Path.GetFileName(OutputPath)}"
             : $"{string.Join("+", Boundaries.Select(b => b.Name))} → {Path.GetFileName(OutputPath)}";
 
+    /// <summary>
+    /// 矢量模式下没有矩形范围，Target 的四个值是 NaN。System.Text.Json 默认拒绝
+    /// NaN/Infinity，序列化时抛异常会让这条历史整条丢失（日志里只留下一行
+    /// "历史写入失败"）。非有限值一律落成 null——回填时 <c>GetDouble</c> 会跳过。
+    /// </summary>
+    private static double? Finite(double value) => double.IsFinite(value) ? value : null;
+
     public override string ParametersJson => System.Text.Json.JsonSerializer.Serialize(new
     {
         kind = Boundaries is null ? "mosaic" : "mosaic-vector",
         inputs = InputPaths,
         output = OutputPath,
-        west = Target.West, south = Target.South, east = Target.East, north = Target.North,
+        west = Finite(Target.West), south = Finite(Target.South),
+        east = Finite(Target.East), north = Finite(Target.North),
         resampling = Resampling,
         writeMetadata = WriteMetadata,
         // 只存编码不存几何：几何动辄几十万顶点，而 PRD FR-09 要的是"能回填"。

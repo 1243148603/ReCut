@@ -14,6 +14,74 @@ internal static class InstallOperation
 
     public static string AppExeIn(string directory) => Path.Combine(directory, "CutMap.App.exe");
 
+    internal const string OwnershipFile = ".cutmap-install";
+
+    internal static void ValidateTarget(string directory)
+    {
+        var full = Path.GetFullPath(directory).TrimEnd(Path.DirectorySeparatorChar);
+        if (string.Equals(full, Path.GetPathRoot(full)?.TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("不能把磁盘根目录作为安装目录。");
+        if (Directory.Exists(full) && (File.GetAttributes(full) & FileAttributes.ReparsePoint) != 0)
+            throw new InvalidOperationException("安装目录不能是目录联接或符号链接。");
+        if (Directory.Exists(full) && Directory.EnumerateFileSystemEntries(full).Any() &&
+            !File.Exists(Path.Combine(full, OwnershipFile)))
+        {
+            // 兼容旧版仅限固定安装位置，不能把任意用户目录认作旧程序。
+            var legacy = string.Equals(full, Path.GetFullPath(DefaultDirectory), StringComparison.OrdinalIgnoreCase) &&
+                File.Exists(AppExeIn(full)) && File.Exists(Path.Combine(full, "CutMap.Cli.exe")) &&
+                File.Exists(Path.Combine(full, "ctb", "bin", "ctb-tile.exe"));
+            if (!legacy) throw new InvalidOperationException("目标目录包含非 CutMap 文件，拒绝覆盖。");
+        }
+    }
+
+    internal static void ValidateFiles(string directory)
+    {
+        string[] required = ["CutMap.App.exe", "CutMap.Cli.exe", "coreclr.dll",
+            "ctb/bin/ctb-tile.exe", "THIRD-PARTY-NOTICES.txt",
+            "resources/中国_省.geojson", "resources/中国_市.geojson", "resources/中国_县.geojson"];
+        foreach (var relative in required)
+            if (!File.Exists(Path.Combine(directory, relative)))
+                throw new InvalidDataException($"安装载荷缺少必需文件：{relative}");
+    }
+
+    // 解压和验证都在同盘临时目录完成，旧版直到替换前始终可用。
+    // 备份保留供回退，也避免升级删除用户误放到安装目录里的数据。
+    internal static string? Deploy(string directory, Action<string> extract, string setupPath)
+    {
+        directory = Path.GetFullPath(directory).TrimEnd(Path.DirectorySeparatorChar);
+        ValidateTarget(directory);
+        if (Path.GetFullPath(setupPath).StartsWith(directory + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("请从安装目录外运行新版安装包，不能覆盖正在运行的安装器。");
+        var stage = directory + ".stage-" + Guid.NewGuid().ToString("N");
+        var backup = directory + ".previous-" + DateTime.Now.ToString("yyyyMMddHHmmss") + "-" + Guid.NewGuid().ToString("N")[..6];
+        var moved = false;
+        try
+        {
+            Directory.CreateDirectory(stage);
+            extract(stage);
+            ValidateFiles(stage);
+            File.Copy(setupPath, Path.Combine(stage, "CutMap-Setup.exe"));
+            File.WriteAllText(Path.Combine(stage, OwnershipFile), ShellIntegration.Version);
+            if (Directory.Exists(directory))
+            {
+                Directory.Move(directory, backup);
+                moved = true;
+            }
+            try { Directory.Move(stage, directory); }
+            catch
+            {
+                if (moved && !Directory.Exists(directory)) Directory.Move(backup, directory);
+                throw;
+            }
+            return moved ? backup : null;
+        }
+        finally
+        {
+            // stage 是本次生成的固定同级路径，不使用外部输入作为递归清理目标。
+            if (Directory.Exists(stage)) Directory.Delete(stage, recursive: true);
+        }
+    }
+
     /// <summary>
     /// 装到 <paramref name="installDirectory"/>。抛异常即失败，异常消息面向用户。
     /// </summary>
@@ -24,15 +92,10 @@ internal static class InstallOperation
         IProgress<(int Done, int Total, string Name)>? progress,
         bool launchAfter)
     {
-        if (Directory.Exists(installDirectory))
-        {
-            // 覆盖安装前先清干净：旧版本可能留下已经不再分发的文件，
-            // 留着它们会让"装完还是老行为"这种问题特别难查。
-            progress?.Report((0, 0, "清除上一版残留"));
-            Directory.Delete(installDirectory, recursive: true);
-        }
-
-        Payload.ExtractTo(installDirectory, progress);
+        if (!string.Equals(Path.GetFullPath(installDirectory), Path.GetFullPath(DefaultDirectory), StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("安装器只允许安装到当前用户的 CutMap 程序目录。");
+        var backup = Deploy(installDirectory, target => Payload.ExtractTo(target, progress), Environment.ProcessPath!);
+        if (backup is not null) progress?.Report((0, 0, $"旧版及原目录文件已保留：{backup}"));
 
         var appExe = AppExeIn(installDirectory);
         if (!File.Exists(appExe))
@@ -41,7 +104,6 @@ internal static class InstallOperation
         // 把安装器自己复制进安装目录：卸载项要指向一个稳定的路径。
         // 指向"用户当初双击的那个文件"是不行的——很多人装完就把安装包删了。
         var setupInInstallDir = Path.Combine(installDirectory, "CutMap-Setup.exe");
-        File.Copy(Environment.ProcessPath!, setupInInstallDir, overwrite: true);
 
         progress?.Report((0, 0, "创建快捷方式"));
         ShellIntegration.CreateShortcut(ShellIntegration.StartMenuShortcut, appExe, installDirectory);

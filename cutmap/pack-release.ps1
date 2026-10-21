@@ -28,7 +28,8 @@ param(
     # 参数默认表达式里它可能还是空的，于是 Split-Path 报"参数为空"。
     # $PSCommandPath 在脚本体内更可靠，所以放到下面算。
     [string]$RepoRoot,
-    [string]$Configuration = 'Release'
+    [string]$Configuration = 'Release',
+    [string]$SourceRevision = 'working-tree'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -42,19 +43,8 @@ Write-Host "仓库根：$RepoRoot"
 
 # dotnet 可能只装在用户目录（官方 dotnet-install 脚本默认就是装那里），
 # 那种情况下它不在系统 PATH 上，直接调会报"无法将 dotnet 识别为 cmdlet"。
-if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
-    $candidates = @(
-        (Join-Path $env:LOCALAPPDATA 'Microsoft\dotnet'),
-        (Join-Path $env:USERPROFILE '.dotnet'),
-        'C:\Program Files\dotnet'
-    )
-    $found = $candidates | Where-Object { Test-Path (Join-Path $_ 'dotnet.exe') } | Select-Object -First 1
-    if (-not $found) {
-        throw "找不到 dotnet。请先装 .NET 8 SDK：https://dotnet.microsoft.com/download/dotnet/8.0"
-    }
-    $env:PATH = "$found;$env:PATH"
-    Write-Host "dotnet：$found（用户级安装，已临时加入 PATH）"
-}
+. (Join-Path (Split-Path -Parent $PSCommandPath) 'release-common.ps1')
+Use-CutMapSdk
 
 $cutmapDir = Join-Path $RepoRoot 'cutmap'
 $appProject = Join-Path $cutmapDir 'src\CutMap.App\CutMap.App.csproj'
@@ -87,13 +77,18 @@ if ($LASTEXITCODE -ne 0) { throw 'dotnet publish (CLI) 失败' }
 Write-Host '== 3/4 组装 =='
 Copy-Item $ctbDir (Join-Path $stage 'ctb') -Recurse -Force
 if (Test-Path $resourcesDir) {
-    Copy-Item $resourcesDir (Join-Path $stage 'resources') -Recurse -Force
-    Write-Host '   已带上 resources\（行政区划边界）'
+    $resStage = Join-Path $stage 'resources'
+    New-Item -ItemType Directory -Path $resStage -Force | Out-Null
+    foreach ($boundaryName in @('中国_省.geojson', '中国_市.geojson', '中国_县.geojson')) {
+        Copy-Item -LiteralPath (Join-Path $resourcesDir $boundaryName) -Destination $resStage -Force
+    }
+    Write-Host '   已带三份行政区划边界（不带本机配置或抓取缓存）'
 } else {
     Write-Host '   未找到 resources\ —— 行政区划选择器在包里会提示缺数据'
 }
 Copy-Item (Join-Path $cutmapDir 'THIRD-PARTY-NOTICES.txt') $stage -Force
 Copy-Item (Join-Path $cutmapDir 'README.md') $stage -Force
+Write-CutMapBuildInfo -Stage $stage -Version $version -Revision $SourceRevision
 
 # 调试符号与 XML 文档不进发布包。
 # --- 自包含闸门 -------------------------------------------------------------

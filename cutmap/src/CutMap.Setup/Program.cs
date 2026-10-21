@@ -15,6 +15,31 @@ internal static class Program
     {
         ApplicationConfiguration.Initialize();
 
+        if (Has(args, "--self-test"))
+        {
+            AttachConsole(AttachParentProcess);
+            return SetupGate.Run();
+        }
+        if (Has(args, "--verify"))
+        {
+            AttachConsole(AttachParentProcess);
+            if (!Payload.IsPresent(out var verificationError))
+            {
+                Console.Error.WriteLine(verificationError);
+                return 2;
+            }
+            var temporary = Path.Combine(Path.GetTempPath(), "cutmap-verify-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                Payload.ExtractTo(temporary, null);
+                InstallOperation.ValidateFiles(temporary);
+                Console.WriteLine("PASS 安装载荷可解压且包含自包含运行时、CTB 和边界数据。");
+                return 0;
+            }
+            catch (Exception ex) { Console.Error.WriteLine(ex.Message); return 1; }
+            finally { if (Directory.Exists(temporary)) Directory.Delete(temporary, true); }
+        }
+
         var uninstall = Has(args, "--uninstall");
         var silent = Has(args, "--silent") || Has(args, "--quiet");
         var noLaunch = Has(args, "--no-launch");
@@ -30,7 +55,8 @@ internal static class Program
 
         if (silent) return SilentInstall(noLaunch);
 
-        Application.Run(new InstallerForm());
+        using var installer = new InstallerForm();
+        Application.Run(installer);
         return 0;
     }
 
@@ -72,11 +98,18 @@ internal static class Program
         AttachConsole(AttachParentProcess);
         var directory = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);
 
+        if (!string.Equals(Path.GetFullPath(directory), Path.GetFullPath(InstallOperation.DefaultDirectory), StringComparison.OrdinalIgnoreCase) ||
+            !File.Exists(Path.Combine(directory, InstallOperation.OwnershipFile)))
+        {
+            if (!silent) MessageBox.Show("只能从已登记的 CutMap 安装目录卸载。", "无法卸载");
+            return 2;
+        }
+
         if (!silent &&
             MessageBox.Show(
                 $"要从这台电脑上移除 {ShellIntegration.ProductName} 吗？\n\n" +
                 $"安装位置：{directory}\n\n" +
-                "你产出的瓦片与 DEM 数据不在这个目录里，不会被删除。",
+                "此目录内的文件将被删除，请先移走放在这里的瓦片或 DEM。用户配置与同级升级备份保留。",
                 "卸载 " + ShellIntegration.ProductName,
                 MessageBoxButtons.YesNo, MessageBoxIcon.Question,
                 MessageBoxDefaultButton.Button2) != DialogResult.Yes)

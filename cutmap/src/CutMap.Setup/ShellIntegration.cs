@@ -114,11 +114,15 @@ internal static class ShellIntegration
     /// </summary>
     public static void ScheduleSelfDelete(string directory)
     {
-        var script = $"ping 127.0.0.1 -n 3 > nul & rmdir /S /Q \"{directory}\"";
+        if (!string.Equals(Path.GetFullPath(directory), Path.GetFullPath(InstallOperation.DefaultDirectory), StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("拒绝清理固定安装目录之外的路径。");
+        InstallOperation.ValidateTarget(directory);
+        var literal = directory.Replace("'", "''", StringComparison.Ordinal);
+        var script = $"Start-Sleep -Seconds 3; Remove-Item -LiteralPath '{literal}' -Recurse -Force";
         Process.Start(new ProcessStartInfo
         {
-            FileName = "cmd.exe",
-            Arguments = "/C " + script,
+            FileName = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "WindowsPowerShell", "v1.0", "powershell.exe"),
+            Arguments = "-NoProfile -NonInteractive -EncodedCommand " + Convert.ToBase64String(System.Text.Encoding.Unicode.GetBytes(script)),
             CreateNoWindow = true,
             UseShellExecute = false,
             WindowStyle = ProcessWindowStyle.Hidden,

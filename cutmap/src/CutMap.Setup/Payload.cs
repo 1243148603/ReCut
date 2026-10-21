@@ -22,11 +22,11 @@ internal static class Payload
     private const int TrailerBytes = 8 + 8;                          // 长度 + 魔数
 
     /// <summary>本 exe 是否带载荷。</summary>
-    public static bool IsPresent(out string reason)
+    public static bool IsPresent(out string reason, string? packagePath = null)
     {
         try
         {
-            using var file = File.OpenRead(Environment.ProcessPath!);
+            using var file = File.OpenRead(packagePath ?? Environment.ProcessPath!);
             if (file.Length < TrailerBytes + 1)
             {
                 reason = "这个 exe 太短，不像是带载荷的安装包。";
@@ -62,11 +62,13 @@ internal static class Payload
     }
 
     /// <summary>把载荷解压到 <paramref name="targetDirectory"/>。返回解压出的文件数。</summary>
-    public static int ExtractTo(string targetDirectory, IProgress<(int Done, int Total, string Name)>? progress)
+    public static int ExtractTo(string targetDirectory, IProgress<(int Done, int Total, string Name)>? progress,
+                                string? packagePath = null)
     {
+        if (!IsPresent(out var reason, packagePath)) throw new InvalidDataException(reason);
         Directory.CreateDirectory(targetDirectory);
 
-        using var file = File.OpenRead(Environment.ProcessPath!);
+        using var file = File.OpenRead(packagePath ?? Environment.ProcessPath!);
         file.Seek(-TrailerBytes, SeekOrigin.End);
         var length = ReadInt64(file);
         var payloadStart = file.Length - TrailerBytes - length;

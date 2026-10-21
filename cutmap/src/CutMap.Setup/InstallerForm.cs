@@ -22,6 +22,7 @@ internal sealed class InstallerForm : Form
 
     private readonly string _installDirectory;
     private bool _installed;
+    private bool _installing;
 
     public InstallerForm()
     {
@@ -39,6 +40,7 @@ internal sealed class InstallerForm : Form
         AutoScaleMode = AutoScaleMode.Font;
 
         BuildLayout();
+        FormClosing += (_, e) => { if (_installing) e.Cancel = true; };
 
         var existing = ShellIntegration.InstalledDirectory();
         if (existing is not null && !string.Equals(existing, _installDirectory, StringComparison.OrdinalIgnoreCase))
@@ -122,8 +124,9 @@ internal sealed class InstallerForm : Form
         CancelButton = _close;
     }
 
-    private void Install()
+    private async void Install()
     {
+        _installing = true;
         _action.Enabled = false;
         _close.Enabled = false;
         _launch.Enabled = false;
@@ -143,10 +146,10 @@ internal sealed class InstallerForm : Form
                 {
                     _detail.Text = p.Name + "…";
                 }
-                Application.DoEvents();
             });
 
-            InstallOperation.Run(_installDirectory, progress, _launch.Checked);
+            var launch = _launch.Checked;
+            await Task.Run(() => InstallOperation.Run(_installDirectory, progress, launch));
 
             _progress.Value = _progress.Maximum;
             _detail.ForeColor = Color.DarkGreen;
@@ -163,11 +166,12 @@ internal sealed class InstallerForm : Form
             _detail.Text = "安装失败：" + ex.Message;
             MessageBox.Show(this,
                 $"安装失败：\n\n{ex.Message}\n\n" +
-                "若是权限或磁盘空间问题，清理后重试即可；已写入的文件可以手动删除。",
+                "请检查权限和磁盘空间后重试。载荷校验失败不会删除原版本；升级前的目录保留在同级备份中。",
                 "安装失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
             _action.Enabled = true;
             _close.Enabled = true;
             _launch.Enabled = true;
         }
+        finally { _installing = false; }
     }
 }

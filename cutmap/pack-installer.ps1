@@ -23,7 +23,8 @@
 [CmdletBinding()]
 param(
     [string]$RepoRoot,
-    [string]$Configuration = 'Release'
+    [string]$Configuration = 'Release',
+    [string]$SourceRevision = 'working-tree'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -37,17 +38,8 @@ Write-Host "仓库根：$RepoRoot"
 
 # dotnet 可能只装在用户目录（官方 dotnet-install 脚本默认就是装那里），
 # 那种情况下它不在系统 PATH 上，直接调会报"无法将 dotnet 识别为 cmdlet"。
-if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
-    $candidates = @(
-        (Join-Path $env:LOCALAPPDATA 'Microsoft\dotnet'),
-        (Join-Path $env:USERPROFILE '.dotnet'),
-        'C:\Program Files\dotnet'
-    )
-    $found = $candidates | Where-Object { Test-Path (Join-Path $_ 'dotnet.exe') } | Select-Object -First 1
-    if (-not $found) { throw "找不到 dotnet，请先装 .NET 8 SDK。" }
-    $env:PATH = "$found;$env:PATH"
-    Write-Host "dotnet：$found（用户级安装，已临时加入 PATH）"
-}
+. (Join-Path (Split-Path -Parent $PSCommandPath) 'release-common.ps1')
+Use-CutMapSdk
 
 $cutmapDir = Join-Path $RepoRoot 'cutmap'
 $ctbDir = Join-Path $RepoRoot 'ctb'
@@ -83,14 +75,16 @@ if (Test-Path $resourcesDir) {
     # 只带边界数据，不带抓取脚本与缓存——用户不需要它们，缓存还有几百个文件。
     $resStage = Join-Path $stage 'resources'
     New-Item -ItemType Directory -Path $resStage -Force | Out-Null
-    Get-ChildItem $resourcesDir -Filter '*.geojson' -File |
-        Copy-Item -Destination $resStage -Force
+    foreach ($boundaryName in @('中国_省.geojson', '中国_市.geojson', '中国_县.geojson')) {
+        Copy-Item -LiteralPath (Join-Path $resourcesDir $boundaryName) -Destination $resStage -Force
+    }
     Write-Host '   已带 resources\*.geojson（行政区划边界）'
 } else {
     Write-Host '   未找到 resources\ —— 行政区划选择器在装好的程序里会提示缺数据'
 }
 Copy-Item (Join-Path $cutmapDir 'THIRD-PARTY-NOTICES.txt') $stage -Force
 Copy-Item (Join-Path $cutmapDir 'README.md') $stage -Force
+Write-CutMapBuildInfo -Stage $stage -Version $version -Revision $SourceRevision
 
 # --- 自包含闸门 -------------------------------------------------------------
 # 必须确认运行时真的被打进去了。这个检查是有来历的：

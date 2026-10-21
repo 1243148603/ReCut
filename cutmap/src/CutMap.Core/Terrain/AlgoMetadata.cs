@@ -40,7 +40,20 @@ public sealed record AlgoMetadata
     public required string DataType { get; init; }
 
     [JsonPropertyName("nodata")]
+    [JsonNumberHandling(JsonNumberHandling.AllowNamedFloatingPointLiterals)]
     public double? NoData { get; init; }
+
+    [JsonPropertyName("raster_sha256")]
+    public string? RasterSha256 { get; init; }
+
+    [JsonPropertyName("geotransform")]
+    public double[]? GeoTransform { get; init; }
+
+    [JsonPropertyName("resolution_native")]
+    public double[]? NativeResolution { get; init; }
+
+    [JsonPropertyName("resolution_native_unit")]
+    public string? NativeUnit { get; init; }
 
     [JsonPropertyName("source_files")]
     public required string[] SourceFiles { get; init; }
@@ -63,7 +76,30 @@ public sealed record AlgoMetadata
         [property: JsonPropertyName("arcsec")] double[] Arcsec,
         [property: JsonPropertyName("metres_approx")] double[] MetresApprox);
 
-    public const string CurrentFormatVersion = "1.0";
+    public const string CurrentFormatVersion = "1.1";
+
+    public static string Fingerprint(string path)
+    {
+        using var stream = File.OpenRead(path);
+        return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(stream));
+    }
+
+    public static string Refresh(string path, Action<string>? log = null)
+    {
+        AlgoMetadata? old = null;
+        var json = Path.ChangeExtension(path, ".json");
+        if (File.Exists(json))
+        {
+            try { old = JsonSerializer.Deserialize<AlgoMetadata>(File.ReadAllText(json)); }
+            catch (JsonException ex) { log?.Invoke($"原元数据无效，将重新实测：{ex.Message}"); }
+        }
+        var measured = Measure(path, [path]);
+        if (old is not null && old.RasterSha256 == measured.RasterSha256)
+            measured = measured with { SourceFiles = old.SourceFiles, GeneratedAt = old.GeneratedAt };
+        else if (old is not null)
+            log?.Invoke("TIFF 指纹与原元数据不一致，重新实测；旧源文件溯源不再沿用。");
+        return measured.WriteBeside(path);
+    }
 
     private static readonly JsonSerializerOptions WriteOptions = new()
     {
@@ -101,10 +137,20 @@ public sealed record AlgoMetadata
                 ]),
             DataType = info.DataType.ToString().Replace("GDT_", ""),
             NoData = info.NoData,
-            SourceFiles = [.. sourceFiles.Select(Path.GetFileName).OfType<string>()],
+            RasterSha256 = Fingerprint(tifPath),
+            GeoTransform = info.GeoTransform,
+            NativeResolution = info.NativeResolution,
+            NativeUnit = NativeUnitOf(info),
+            SourceFiles = [.. sourceFiles.Select(Path.GetFullPath)],
             GeneratedAt = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture),
             Software = $"{CutMapInfo.Name} {CutMapInfo.Version}",
         };
+    }
+
+    private static string NativeUnitOf(RasterInfo info)
+    {
+        using var srs = new OSGeo.OSR.SpatialReference(info.ProjectionWkt);
+        return srs.IsProjected() != 0 ? srs.GetLinearUnitsName() : srs.GetAngularUnitsName();
     }
 
     public string ToJson() => JsonSerializer.Serialize(this, WriteOptions);
@@ -113,7 +159,7 @@ public sealed record AlgoMetadata
     public string WriteBeside(string tifPath)
     {
         var target = Path.ChangeExtension(tifPath, ".json");
-        File.WriteAllText(target, ToJson(), new System.Text.UTF8Encoding(false));
+        Store.AtomicFile.Write(target, ToJson());
         return target;
     }
 }

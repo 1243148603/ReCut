@@ -81,21 +81,27 @@ public static class Packager
 
             // FR-15：边界矢量随产物分发——拷进瓦片目录，它才会进 zip、
             // 才会跟着瓦片一起交到前端手里。
-            if (request.BoundaryGeoJsonPath is { } boundaryPath)
+            if ((request.BoundaryGeoJsonPath ?? CropProducts.ResolveTiles(tilesDir)) is { } boundaryPath)
             {
                 if (File.Exists(boundaryPath))
                 {
                     // **统一落成 boundary.geojson**：前端才能确定性地从
                     // <瓦片目录>/boundary.geojson 取到它，不必去猜裁剪文件名叫什么。
                     var boundaryTarget = Path.Combine(tilesDir, "boundary.geojson");
-                    File.Copy(boundaryPath, boundaryTarget, overwrite: true);
+                    if (!string.Equals(Path.GetFullPath(boundaryPath), Path.GetFullPath(boundaryTarget), StringComparison.OrdinalIgnoreCase))
+                        File.Copy(boundaryPath, boundaryTarget, overwrite: true);
                     onLog?.Invoke($"已随产物分发边界矢量：boundary.geojson" +
                                   $"（源：{Path.GetFileName(boundaryPath)}）");
                 }
                 else
                 {
-                    onLog?.Invoke($"边界矢量不存在，跳过：{boundaryPath}");
+                    throw new FileNotFoundException("指定边界不存在。", boundaryPath);
                 }
+            }
+            else if (File.Exists(Path.Combine(tilesDir, "boundary.geojson")))
+            {
+                File.Delete(Path.Combine(tilesDir, "boundary.geojson"));
+                onLog?.Invoke("已移除未关联本次裁剪的旧 boundary.geojson。");
             }
         }
 
@@ -111,16 +117,8 @@ public static class Packager
 
             // 元数据 json 与 tif 同名同目录（FR-17）。已经有就不重写——
             // 重写会把"这份数据什么时候、用哪些源产出的"覆盖成"打包的时间"。
-            algoJson = Path.ChangeExtension(tif, ".json");
-            if (!File.Exists(algoJson))
-            {
-                AlgoMetadata.Measure(tif, []).WriteBeside(tif);
-                onLog?.Invoke($"已写 {algoJson}");
-            }
-            else
-            {
-                onLog?.Invoke($"算法元数据已存在，保留原样：{algoJson}");
-            }
+            algoJson = AlgoMetadata.Refresh(tif, onLog);
+            onLog?.Invoke($"已重新实测算法元数据：{algoJson}");
         }
 
         onProgress?.Invoke(0.2);

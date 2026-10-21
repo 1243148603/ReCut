@@ -32,6 +32,8 @@ public static class Coverage
         if (inputs.Count == 0)
             return new CoverageResult(false, null, 0, 0, 0, 0, ["没有输入文件。"]);
 
+        if (inputs.Any(i => i.NeedsNormalization)) return CheckFootprints(inputs, target);
+
         var union = Union(inputs)!.Value;
 
         // 半个像元的口径余量（+一个小的浮点余量，免得"差 1e-15 度"被报成缺一条边）。
@@ -62,6 +64,29 @@ public static class Coverage
             problems.Add($"输入覆盖 {union}，目标 {target} 在其内。");
 
         return new CoverageResult(covered, union, westGap, southGap, eastGap, northGap, problems);
+    }
+
+    private static CoverageResult CheckFootprints(IReadOnlyList<RasterInfo> inputs, BBox target)
+    {
+        GdalRuntime.EnsureReady();
+        using var collection = new OSGeo.OGR.Geometry(OSGeo.OGR.wkbGeometryType.wkbGeometryCollection);
+        foreach (var info in inputs)
+        {
+            var json = System.Text.Json.JsonSerializer.Serialize(new { type = "Polygon", coordinates = new[] { info.Wgs84Footprint } });
+            using var polygon = OSGeo.OGR.Ogr.CreateGeometryFromJson(json);
+            collection.AddGeometry(polygon);
+        }
+        using var union = collection.UnaryUnion();
+        var tolerance = inputs.Max(i => Math.Max(i.PixelSizeX, i.PixelSizeY)) / 2 + 1e-9;
+        using var buffered = union.Buffer(tolerance, 8);
+        double[][] ring = [[target.West, target.South], [target.East, target.South],
+            [target.East, target.North], [target.West, target.North], [target.West, target.South]];
+        using var goal = OSGeo.OGR.Ogr.CreateGeometryFromJson(System.Text.Json.JsonSerializer.Serialize(
+            new { type = "Polygon", coordinates = new[] { ring } }));
+        using var missing = goal.Difference(buffered);
+        var covered = missing.IsEmpty() || missing.Area() < 1e-14;
+        return new CoverageResult(covered, Union(inputs), 0, 0, 0, 0,
+            [covered ? "输入 DEM 的真实 WGS84 覆盖面包含目标。" : "目标有区域不在输入 DEM 的真实覆盖面内，请补齐分幅或缩小范围。"]);
     }
 
     // 沿输入边缘分割成竖条，每条合并纬度区间；外接矩形包住目标不代表没有缺幅。

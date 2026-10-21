@@ -1,0 +1,15 @@
+[PASS] UTM 真实范围转换为经纬度
+[PASS] UTM 覆盖检查使用真实面
+[PASS] UTM 参考层级非负且合理
+[PASS] 旋转范围含四角
+[PASS] 旋转外框空角拒绝覆盖
+[PASS] utm.tif 实际规范化切片
+[PASS] rotation.tif 实际规范化切片
+[PASS] 元数据原单位为米
+[PASS] 元数据 WGS84 范围真实
+[PASS] 未变 TIFF 保留源清单
+[PASS] 同名 TIFF 修改后重建元数据
+[PASS] NaN nodata 可以写入 JSON
+[PASS] 只前端可分发绑定边界
+[PASS] 矩形重跑不带旧边界
+证据目录：D:\Map\cutmap\_gate\coordinates\f10c790008714fa2b8ef32b3724f495f

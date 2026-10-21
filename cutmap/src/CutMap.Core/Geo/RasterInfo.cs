@@ -40,10 +40,64 @@ public sealed record RasterInfo(
     long FileBytes)
 {
     /// <summary>像元宽度（度，取绝对值）。CTB 不重投影时用的就是它。</summary>
-    public double PixelSizeX => Math.Abs(GeoTransform[1]);
+    public double PixelSizeX => Math.Abs(SlicingTransform[1]);
 
     /// <summary>像元高度（度，取绝对值）。</summary>
-    public double PixelSizeY => Math.Abs(GeoTransform[5]);
+    public double PixelSizeY => Math.Abs(SlicingTransform[5]);
+
+    public double[] NativeResolution => [Math.Sqrt(GeoTransform[1] * GeoTransform[1] + GeoTransform[4] * GeoTransform[4]),
+        Math.Sqrt(GeoTransform[2] * GeoTransform[2] + GeoTransform[5] * GeoTransform[5])];
+    public bool NeedsNormalization => GeoTransform[2] != 0 || GeoTransform[4] != 0 ||
+        GeoTransform[1] <= 0 || GeoTransform[5] >= 0 || (HasProjection && EpsgCode is not (4326 or 4490));
+
+    private double[]? _slicingTransform;
+    private double[] SlicingTransform
+    {
+        get
+        {
+            if (!NeedsNormalization) return GeoTransform;
+            if (_slicingTransform is not null) return _slicingTransform;
+            GdalRuntime.EnsureReady();
+            using var ds = Gdal.Open(Path, Access.GA_ReadOnly) ?? throw new RasterException("无法读取 DEM。");
+            using var vrt = Gdal.AutoCreateWarpedVRT(ds, null, "EPSG:4326", ResampleAlg.GRA_Bilinear, 0);
+            var gt = new double[6];
+            vrt.GetGeoTransform(gt);
+            return _slicingTransform = gt;
+        }
+    }
+
+    private double[][]? _footprint;
+    public double[][] Wgs84Footprint
+    {
+        get
+        {
+            if (_footprint is not null) return _footprint;
+            GdalRuntime.EnsureReady();
+            using var source = HasProjection ? new SpatialReference(ProjectionWkt) : null;
+            using var target = new SpatialReference("");
+            target.ImportFromEPSG(4326);
+            source?.SetAxisMappingStrategy(AxisMappingStrategy.OAMS_TRADITIONAL_GIS_ORDER);
+            target.SetAxisMappingStrategy(AxisMappingStrategy.OAMS_TRADITIONAL_GIS_ORDER);
+            using var transform = source is null ? null : new CoordinateTransformation(source, target);
+            var points = new List<double[]>();
+            (double X, double Y)[] corners = [(0, 0), (Width, 0), (Width, Height), (0, Height), (0, 0)];
+            for (var edge = 0; edge < 4; edge++)
+                for (var step = 0; step < 32; step++)
+                {
+                    var t = step / 32.0;
+                    var px = corners[edge].X * (1 - t) + corners[edge + 1].X * t;
+                    var py = corners[edge].Y * (1 - t) + corners[edge + 1].Y * t;
+                    double[] point = [GeoTransform[0] + px * GeoTransform[1] + py * GeoTransform[2],
+                        GeoTransform[3] + px * GeoTransform[4] + py * GeoTransform[5], 0];
+                    transform?.TransformPoint(point);
+                    if (!double.IsFinite(point[0]) || !double.IsFinite(point[1]) || Math.Abs(point[0]) > 180 || Math.Abs(point[1]) > 90)
+                        throw new RasterException("DEM 无法转换为有效 WGS84 范围，请检查坐标系与日期变更线。");
+                    points.Add([point[0], point[1]]);
+                }
+            points.Add(points[0]);
+            return _footprint = [.. points];
+        }
+    }
 
     /// <summary>CTB 没有坐标系时会直接抛异常（已实测），所以这个必须为真才允许切片。</summary>
     public bool HasProjection => !string.IsNullOrWhiteSpace(ProjectionWkt);
@@ -52,11 +106,8 @@ public sealed record RasterInfo(
     /// GDAL 口径的范围（外边缘）。**这是 CTB 实际会去切的范围**，也是文件声明的
     /// footprint——瓦片数预估、覆盖判断都用它。
     /// </summary>
-    public BBox Extent => new(
-        GeoTransform[0],
-        GeoTransform[3] + Height * GeoTransform[5],
-        GeoTransform[0] + Width * GeoTransform[1],
-        GeoTransform[3]);
+    public BBox Extent => new(Wgs84Footprint.Min(p => p[0]), Wgs84Footprint.Min(p => p[1]),
+        Wgs84Footprint.Max(p => p[0]), Wgs84Footprint.Max(p => p[1]));
 
     /// <summary>EPSG 代码；非地理/投影坐标系或无法识别时为 null。</summary>
     public int? EpsgCode
@@ -125,6 +176,6 @@ public sealed record RasterInfo(
     {
         var crs = HasProjection ? (EpsgCode is { } code ? $"EPSG:{code}" : "有坐标系(未识别)") : "无坐标系";
         var nodata = NoData is { } nd ? nd.ToString("G6") : "无";
-        return $"{Width}×{Height}，{crs}，像元 {PixelSizeX * 3600:F3}″，{DataType}，nodata={nodata}";
+        return $"{Width}×{Height}，{crs}，原像元 {NativeResolution[0]:G6}×{NativeResolution[1]:G6}（CRS 单位），切片参考 {PixelSizeX * 3600:F3}″，{DataType}，nodata={nodata}";
     }
 }

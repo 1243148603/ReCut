@@ -15,6 +15,7 @@ public sealed class PackageJob : Job
     public string? AlgoTifPath { get; init; }
     public bool ZipTiles { get; init; }
     public bool ZipAlgo { get; init; }
+    public string? BoundaryGeoJsonPath { get; init; }
 
     /// <summary>layer.json 的可编辑字段（FR-03）。</summary>
     public required string LayerName { get; init; }
@@ -28,9 +29,9 @@ public sealed class PackageJob : Job
     /// </summary>
     private string? ResolveBoundaryGeoJson()
     {
+        if (BoundaryGeoJsonPath is not null) return BoundaryGeoJsonPath;
         if (AlgoTifPath is not { } tif) return null;
-        var candidate = Path.ChangeExtension(tif, ".boundary.geojson");
-        return File.Exists(candidate) ? candidate : null;
+        return CropProducts.Resolve(tif);
     }
 
     public override string TypeName => "打包";

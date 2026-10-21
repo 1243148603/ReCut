@@ -16,6 +16,8 @@ internal static class Program
 
         switch (args[0])
         {
+            case "coordinate-gate":
+                return CoordinateGate.Run(RepoRoot.Locate());
             case "acceptance-gate":
                 return AcceptanceGate.Run(RepoRoot.Locate());
             case "version":

@@ -115,6 +115,18 @@ public sealed class MosaicJob : Job
                 sourceNotes: [BoundaryStore.SourceAttribution]);
             onLog($"边界矢量：{productBoundary}");
         }
+        else
+        {
+            foreach (var extension in new[] { ".boundary.geojson", ".cutline.geojson" })
+            {
+                var stale = Path.ChangeExtension(OutputPath, extension);
+                if (File.Exists(stale)) File.Delete(stale);
+            }
+        }
+        if (!WriteMetadata && File.Exists(Path.ChangeExtension(OutputPath, ".json")))
+            File.Delete(Path.ChangeExtension(OutputPath, ".json"));
+        CropProducts.Write(OutputPath, Boundaries is { Count: > 0 }
+            ? Path.ChangeExtension(OutputPath, ".boundary.geojson") : null);
 
         onProgress(1.0);
 

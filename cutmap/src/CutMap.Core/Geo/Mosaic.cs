@@ -18,6 +18,10 @@ public static class Mosaic
     /// <summary>与教程 §4.2 一致：2 GB 缓存，30 个输入逐个处理时避免反复换页。</summary>
     public const int CacheMaxMb = 2048;
 
+    public static string Normalize(string input, string output, Action<double>? progress = null,
+                                   CancellationToken cancellation = default) =>
+        Warp([input], output, ["-t_srs", "EPSG:4326"], DefaultResampling, progress, cancellation);
+
     /// <summary>矩形裁剪。输出范围严格等于 <paramref name="target"/>。</summary>
     public static string Run(
         IReadOnlyList<string> sources,

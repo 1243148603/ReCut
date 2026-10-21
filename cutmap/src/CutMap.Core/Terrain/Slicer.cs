@@ -47,6 +47,20 @@ public static class Slicer
             throw new RasterException(
                 $"输入没有坐标系，CTB 无法切片：{request.InputPath}（实测缺 CRS 时 ctb-tile 会抛异常）");
 
+        if (info.NeedsNormalization)
+        {
+            var normalized = Path.Combine(Path.GetTempPath(), "cutmap-normalized-" + Guid.NewGuid().ToString("N") + ".tif");
+            try
+            {
+                onLog?.Invoke($"gdalwarp -t_srs EPSG:4326 -r bilinear \"{request.InputPath}\" \"{normalized}\"");
+                Mosaic.Normalize(request.InputPath, normalized, cancellation: cancellation);
+                var result = Run(home, request with { InputPath = normalized }, onProgress, onLog, cancellation);
+                if (result.Succeeded) CropProducts.BindTiles(request.InputPath, request.OutputDirectory);
+                return result;
+            }
+            finally { if (File.Exists(normalized)) File.Delete(normalized); }
+        }
+
         var maxZoom = request.MaxZoom ?? CtbGrid.ReferenceMaxZoom(info.PixelSizeX);
         var minZoom = request.MinZoom ?? 0;
 
@@ -111,6 +125,7 @@ public static class Slicer
         }
 
         var total = actual.Sum();
+        if (mismatches.Count == 0) CropProducts.BindTiles(request.InputPath, request.OutputDirectory);
         return new SliceOutcome(
             mismatches.Count == 0,
             mismatches.Count == 0 ? null : "瓦片数与预期不符：" + string.Join("；", mismatches),

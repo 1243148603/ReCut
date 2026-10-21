@@ -5,6 +5,7 @@ namespace CutMap.App.Forms;
 
 public enum TaskKind
 {
+    Workflow,
     Mosaic,
     Slice,
     Package,
@@ -43,7 +44,7 @@ public sealed class TaskChooserForm : ThemedForm
             Dock = DockStyle.Fill,
             Padding = new Padding(16),
             ColumnCount = 3,
-            RowCount = 4,
+            RowCount = 5,
         };
         for (var c = 0; c < 3; c++) layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f / 3));
 
@@ -89,6 +90,9 @@ public sealed class TaskChooserForm : ThemedForm
         layout.Controls.Add(MakeButton("拼接裁剪", TaskKind.Mosaic), 0, 3);
         layout.Controls.Add(MakeButton("切片", TaskKind.Slice), 1, 3);
         layout.Controls.Add(MakeButton("打包", TaskKind.Package), 2, 3);
+        var workflow = MakeButton("多步处理向导（勾选步骤与产物）", TaskKind.Workflow);
+        layout.Controls.Add(workflow, 0, 4);
+        layout.SetColumnSpan(workflow, 3);
 
         Controls.Add(layout);
         UpdatePresetNote();

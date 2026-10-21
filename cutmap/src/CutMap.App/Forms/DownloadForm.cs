@@ -27,6 +27,7 @@ public sealed class DownloadForm : ThemedForm
     private readonly Button _ok = new();
 
     private IReadOnlyList<DemTile> _tiles = [];
+    private HashSet<string>? _historyTiles;
 
     private readonly CheckBox _useBoundary = new();
     private readonly Button _pickBoundary = new();
@@ -53,7 +54,8 @@ public sealed class DownloadForm : ThemedForm
     /// <param name="initialSaveDir">预填的保存目录。</param>
     /// <param name="initialSourceId">预填的下载源；找不到就退回第一个可用源。</param>
     public DownloadForm(Core.Geo.BBox? initialArea = null, string? initialSaveDir = null,
-                        string? initialSourceId = null)
+                        string? initialSourceId = null, DownloadSource? historicalSource = null,
+                        IReadOnlyList<string>? historicalTiles = null)
     {
         Text = "下载 DEM 数据";
         StartPosition = FormStartPosition.CenterParent;
@@ -80,6 +82,13 @@ public sealed class DownloadForm : ThemedForm
         // 不再预填重庆：范围留空，由用户从预设 / 已有 DEM / 已有瓦片 / 边界 / 手填里来定
         // （换到别的省市时，不必先把重庆的坐标删掉）。
         if (initialArea is not null) ApplyArea(initialArea.Value, "历史预填");
+        if (historicalSource is not null)
+        {
+            _source.Items.Add(historicalSource);
+            _source.SelectedItem = historicalSource;
+        }
+        _historyTiles = historicalTiles?.ToHashSet(StringComparer.Ordinal);
+        UpdatePreview();
     }
 
     private void BuildLayout()
@@ -135,7 +144,7 @@ public sealed class DownloadForm : ThemedForm
         {
             areaRow.Controls.Add(new Label { Text = AreaLabels[i], AutoSize = true, Anchor = AnchorStyles.Left }, i * 2 + 2, 0);
             var box = new TextBox { Width = 92 };
-            box.TextChanged += (_, _) => UpdatePreview();
+            box.TextChanged += (_, _) => { _historyTiles = null; UpdatePreview(); };
             _area[i] = box;
             areaRow.Controls.Add(box, i * 2 + 3, 0);
         }
@@ -383,6 +392,7 @@ public sealed class DownloadForm : ThemedForm
 
         _boundarySummary.Text = "";
         _tiles = DemTileGrid.Enumerate(area);
+        if (_historyTiles is not null) _tiles = _tiles.Where(t => _historyTiles.Contains(t.Name)).ToArray();
         if (_tiles.Count == 0)
         {
             SetPreview("这个范围落不到任何 1° 分幅上。", Color.Firebrick, []);

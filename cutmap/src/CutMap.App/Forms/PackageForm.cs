@@ -25,6 +25,12 @@ public sealed class PackageForm : ThemedForm
     private readonly TextBox _layerDescription = new();
     private readonly TextBox _layerVersion = new();
     private readonly TextBox _output = new();
+    private readonly TextBox _layerBounds = new();
+    private readonly TextBox _layerZoom = new();
+    private readonly TextBox _boundaryPath = new();
+    public string? BoundaryGeoJsonPath => string.IsNullOrWhiteSpace(_boundaryPath.Text) ? null : _boundaryPath.Text.Trim();
+    public CutMap.Core.Geo.BBox? LayerBounds => CutMap.Core.Geo.BBox.TryParse(_layerBounds.Text, out var b) ? b : null;
+    public int? LayerMaxZoom => int.TryParse(_layerZoom.Text, out var z) ? z : null;
     private readonly Label _hint = new();
     private readonly Button _ok = new();
 
@@ -65,6 +71,7 @@ public sealed class PackageForm : ThemedForm
         _tilesDir.TextChanged += (_, _) => UpdateEnabled();
         _tifPath.TextChanged += (_, _) => UpdateEnabled();
         _output.TextChanged += (_, _) => UpdateEnabled();
+        foreach (var box in new[] { _layerBounds, _layerZoom, _boundaryPath }) box.TextChanged += (_, _) => UpdateEnabled();
         // 窗口开着的期间"世界"也会变：切片任务跑完，瓦片目录才出现。
         Activated += (_, _) => UpdateEnabled();
 
@@ -113,6 +120,13 @@ public sealed class PackageForm : ThemedForm
         var layer = FormLayout.Grid(FormLayout.Flexible());
         layer.AddRow(NameVersionRow());
         layer.AddRow(PathRow("description：", _layerDescription, null));
+        layer.AddRow(PathRow("bounds：", _layerBounds, null));
+        layer.AddRow(PathRow("maxzoom：", _layerZoom, null));
+        layer.AddRow(PathRow("边界 GeoJSON：", _boundaryPath, () =>
+        {
+            using var picker = new OpenFileDialog { Filter = "GeoJSON|*.geojson;*.json" };
+            if (picker.ShowDialog(this) == DialogResult.OK) _boundaryPath.Text = picker.FileName;
+        }));
 
         var note = Theme.Hint("format=heightmap-1.0、scheme=tms、扩展名小写 watermask 是格式要求，不开放编辑。");
         note.Margin = new Padding(0, 8, 0, 0);
@@ -210,6 +224,9 @@ public sealed class PackageForm : ThemedForm
         var outputReady = !string.IsNullOrWhiteSpace(_output.Text);
 
         var problems = new List<string>();
+        if (_wantTiles.Checked && !string.IsNullOrWhiteSpace(_layerBounds.Text) && LayerBounds is null) problems.Add("bounds 须为有效的西 南 东 北，或留空反推");
+        if (_wantTiles.Checked && !string.IsNullOrWhiteSpace(_layerZoom.Text) && (LayerMaxZoom is null or < 0 or > 30)) problems.Add("maxzoom 须为 0–30 或留空反推");
+        if (_wantTiles.Checked && BoundaryGeoJsonPath is { } boundary && !File.Exists(boundary)) problems.Add("边界文件不存在");
         if (_wantTiles.Checked && !tilesReady) problems.Add("瓦片目录不存在");
         if (_wantAlgo.Checked && !algoReady) problems.Add("裁剪 GeoTIFF 不存在");
         if (!_wantTiles.Checked && !_wantAlgo.Checked) problems.Add("至少选一套产物");
@@ -224,5 +241,20 @@ public sealed class PackageForm : ThemedForm
                     : "只产出算法数据，不写 layer.json。")
                 : string.Join("；", problems) + "。",
             problems.Count == 0 ? Theme.StatusKind.Normal : Theme.StatusKind.Error);
+    }
+
+    public void ApplyHistory(System.Text.Json.JsonElement data)
+    {
+        string TextOf(string key) => data.TryGetProperty(key, out var v) && v.ValueKind == System.Text.Json.JsonValueKind.String ? v.GetString() ?? "" : "";
+        bool Flag(string key) => data.TryGetProperty(key, out var v) && v.ValueKind == System.Text.Json.JsonValueKind.True;
+        _layerName.Text = TextOf("layerName"); _layerDescription.Text = TextOf("layerDescription"); _layerVersion.Text = TextOf("layerVersion");
+        _zipTiles.Checked = Flag("zipTiles"); _zipAlgo.Checked = Flag("zipAlgo"); _boundaryPath.Text = TextOf("boundary");
+        if (data.TryGetProperty("layerMaxZoom", out var zoom) && zoom.ValueKind == System.Text.Json.JsonValueKind.Number) _layerZoom.Text = zoom.GetInt32().ToString();
+        if (data.TryGetProperty("layerBounds", out var box) && box.ValueKind == System.Text.Json.JsonValueKind.Object)
+        {
+            var values = new[] { "West", "South", "East", "North" }.Select(k => box.GetProperty(k).GetDouble().ToString(System.Globalization.CultureInfo.InvariantCulture));
+            _layerBounds.Text = string.Join(" ", values);
+        }
+        UpdateEnabled();
     }
 }

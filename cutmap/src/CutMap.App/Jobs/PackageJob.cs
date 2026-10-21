@@ -1,6 +1,7 @@
 using CutMap.Core.Packaging;
 using CutMap.Core.Terrain;
 using CutMap.Core.Tools;
+using CutMap.Core.Geo;
 
 namespace CutMap.App.Jobs;
 
@@ -16,6 +17,8 @@ public sealed class PackageJob : Job
     public bool ZipTiles { get; init; }
     public bool ZipAlgo { get; init; }
     public string? BoundaryGeoJsonPath { get; init; }
+    public BBox? LayerBounds { get; init; }
+    public int? LayerMaxZoom { get; init; }
 
     /// <summary>layer.json 的可编辑字段（FR-03）。</summary>
     public required string LayerName { get; init; }
@@ -51,6 +54,9 @@ public sealed class PackageJob : Job
         layerName = LayerName,
         layerDescription = LayerDescription,
         layerVersion = LayerVersion,
+        layerBounds = LayerBounds,
+        layerMaxZoom = LayerMaxZoom,
+        boundary = BoundaryGeoJsonPath,
     });
 
     public override JobResult Execute(
@@ -73,7 +79,7 @@ public sealed class PackageJob : Job
             if (coverage is not null)
             {
                 layer = LayerJson.Create(LayerName, LayerDescription, LayerVersion,
-                                         coverage.Bounds, coverage.MinZoom, coverage.DeepestZoom);
+                                         LayerBounds ?? coverage.Bounds, coverage.MinZoom, LayerMaxZoom ?? coverage.DeepestZoom);
                 onLog($"layer.json：{layer.MinZoom}–{layer.MaxZoom} 级，" +
                       $"bounds [{string.Join(", ", layer.Bounds.Select(v => v.ToString("F4")))}]");
             }

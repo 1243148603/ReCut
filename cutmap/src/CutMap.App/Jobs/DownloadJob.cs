@@ -34,6 +34,7 @@ public sealed class DownloadJob : Job
         // 只存区域与源：分幅可以从区域确定性地重算（DemTileGrid.Enumerate），
         // 存几千个名字只会把历史文件撑大。
         tileCount = Tiles.Count,
+        tileNames = Tiles.Select(t => t.Name),
     });
 
     public override JobResult Execute(

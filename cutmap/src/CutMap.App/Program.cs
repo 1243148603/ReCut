@@ -13,6 +13,12 @@ internal static class Program
     [STAThread]
     private static void Main(string[] args)
     {
+        if (args.Length > 1 && args[0] == "--workflow-gate")
+        {
+            ApplicationConfiguration.Initialize();
+            AttachConsole(-1);
+            Environment.Exit(Jobs.WorkflowGate.Run(args[1]));
+        }
         Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
         Application.ThreadException += (_, e) => MessageBox.Show(
             "操作失败：" + e.Exception.Message, "CutMap", MessageBoxButtons.OK, MessageBoxIcon.Error);

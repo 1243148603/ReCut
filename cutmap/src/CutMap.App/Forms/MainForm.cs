@@ -192,6 +192,12 @@ public sealed class MainForm : ThemedForm
 
         var preset = chooser.ChosenPreset;
         if (preset is not null) AppendLog($"使用预设：{preset.Name}");
+        if (chooser.Kind == TaskKind.Workflow)
+        {
+            using var wizard = new PipelineForm(preset);
+            if (wizard.ShowDialog(this) == DialogResult.OK) foreach (var step in wizard.PlannedJobs) Enqueue(step);
+            return;
+        }
 
         Job? job = chooser.Kind switch
         {
@@ -261,6 +267,9 @@ public sealed class MainForm : ThemedForm
             LayerName = dialog.LayerName,
             LayerDescription = dialog.LayerDescription,
             LayerVersion = dialog.LayerVersion,
+            LayerBounds = dialog.LayerBounds,
+            LayerMaxZoom = dialog.LayerMaxZoom,
+            BoundaryGeoJsonPath = dialog.BoundaryGeoJsonPath,
         };
     }
 
@@ -409,39 +418,7 @@ public sealed class MainForm : ThemedForm
     {
         using var dialog = new PipelineForm();
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
-
-        var chain = Guid.NewGuid().ToString("N")[..8];
-        var tif = dialog.AlgoTifPath;
-        var tiles = dialog.TilesDirectory;
-        AppendLog($"一键生产：输出到 {dialog.RootDirectory}（中间产物路径自动推导）");
-
-        Enqueue(new MosaicJob
-        {
-            InputPaths = dialog.InputPaths,
-            OutputPath = tif,
-            Target = dialog.Target,
-            Boundaries = dialog.Boundaries,
-            ChainId = chain,
-        });
-        Enqueue(new SliceJob
-        {
-            InputPath = tif,
-            OutputDirectory = tiles,
-            MaxZoom = null,
-            ChainId = chain,
-        });
-        Enqueue(new PackageJob
-        {
-            OutputDirectory = dialog.RootDirectory,
-            TilesDirectory = tiles,
-            AlgoTifPath = tif,
-            ZipTiles = dialog.ZipTiles,
-            ZipAlgo = dialog.ZipAlgo,
-            LayerName = dialog.LayerName,
-            LayerDescription = dialog.LayerDescription,
-            LayerVersion = dialog.LayerVersion,
-            ChainId = chain,
-        });
+        foreach (var job in dialog.PlannedJobs) Enqueue(job);
     }
 
     /// <summary>一键生产的上游没成功时，把同链还在排队的任务标成"已跳过"。</summary>
@@ -653,16 +630,31 @@ public sealed class MainForm : ThemedForm
         }
 
         var kind = Get("kind") ?? "";
+        using var replayDocument = JsonDocument.Parse(entry.ParametersJson);
+        var replay = replayDocument.RootElement;
+        string[] ListOf(string key) => replay.TryGetProperty(key, out var array) && array.ValueKind == JsonValueKind.Array
+            ? array.EnumerateArray().Select(x => x.GetString()).OfType<string>().ToArray() : [];
+        bool Flag(string key, bool fallback = false) => replay.TryGetProperty(key, out var value) ? value.ValueKind == JsonValueKind.True : fallback;
+        var historyPreset = new TaskPreset
+        {
+            Id = "history", Name = "历史参数",
+            Bounds = GetDouble("west") is { } w && GetDouble("south") is { } s && GetDouble("east") is { } e && GetDouble("north") is { } n ? [w, s, e, n] : null,
+            Resampling = Get("resampling") ?? "bilinear", WriteMetadata = Flag("writeMetadata", true),
+            LayerName = Get("layerName") ?? "terrain", LayerDescription = Get("layerDescription") ?? "Cesium terrain tiles",
+            LayerVersion = Get("layerVersion") ?? "1.0.0", ZipTiles = Flag("zipTiles"), ZipAlgo = Flag("zipAlgo"),
+        };
         AppendLog($"从历史重跑：{entry.Type}（{entry.StartedAt.ToLocalTime():MM-dd HH:mm}）");
 
         Job? job = kind switch
         {
             "slice" => BuildSliceJob(Get("input"), Get("output"), GetInt("maxZoom")),
-            "mosaic" or "mosaic-vector" => BuildMosaicJob(Get("output"), GetBoundaryCodes()),
-            "package" => BuildPackageJob(Get("tiles"), Get("tif"), Get("output")),
+            "mosaic" or "mosaic-vector" => BuildMosaicJob(Get("output"), GetBoundaryCodes(), historyPreset, ListOf("inputs")),
+            "package" => BuildPackageJob(Get("tiles"), Get("tif"), Get("output"), historyPreset, replay),
             "download" => BuildDownloadJob(
                 Get("saveDirectory"), Get("sourceId"),
-                GetDouble("west"), GetDouble("south"), GetDouble("east"), GetDouble("north")),
+                GetDouble("west"), GetDouble("south"), GetDouble("east"), GetDouble("north"),
+                Get("urlTemplate") is { } template ? new Core.Download.DownloadSource { Id = Get("sourceId") ?? "historical", Name = (Get("sourceName") ?? "历史源") + "（历史快照）", UrlTemplate = template } : null,
+                ListOf("tileNames")),
             _ => null,
         };
 
@@ -693,9 +685,10 @@ public sealed class MainForm : ThemedForm
         => BuildMosaicJob(null, preset?.BoundaryCodes, preset);
 
     private MosaicJob? BuildMosaicJob(string? output, IReadOnlyList<string>? boundaryCodes = null,
-                                      TaskPreset? preset = null)
+                                      TaskPreset? preset = null, IReadOnlyList<string>? inputs = null)
     {
         using var dialog = new MosaicForm(
+            initialInputs: inputs,
             initialOutput: output ?? PresetOutput(preset),
             initialBoundaryCodes: boundaryCodes,
             preset: preset);
@@ -715,9 +708,10 @@ public sealed class MainForm : ThemedForm
         => BuildPackageJob(null, null, null, preset);
 
     private PackageJob? BuildPackageJob(string? tiles, string? tif, string? output,
-                                        TaskPreset? preset = null)
+                                        TaskPreset? preset = null, JsonElement? history = null)
     {
         using var dialog = new PackageForm(tiles, tif, output, preset);
+        if (history is { } data) dialog.ApplyHistory(data);
         if (dialog.ShowDialog(this) != DialogResult.OK) return null;
         return new PackageJob
         {
@@ -729,18 +723,22 @@ public sealed class MainForm : ThemedForm
             LayerName = dialog.LayerName,
             LayerDescription = dialog.LayerDescription,
             LayerVersion = dialog.LayerVersion,
+            LayerBounds = dialog.LayerBounds,
+            LayerMaxZoom = dialog.LayerMaxZoom,
+            BoundaryGeoJsonPath = dialog.BoundaryGeoJsonPath,
         };
     }
 
     private DownloadJob? BuildDownloadJob(
         string? saveDir, string? sourceId,
-        double? west, double? south, double? east, double? north)
+        double? west, double? south, double? east, double? north,
+        Core.Download.DownloadSource? historicalSource = null, IReadOnlyList<string>? tileNames = null)
     {
         var area = west is { } w && south is { } s && east is { } e && north is { } n
             ? new Core.Geo.BBox(w, s, e, n)
             : (Core.Geo.BBox?)null;
 
-        using var dialog = new DownloadForm(area, saveDir, sourceId);
+        using var dialog = new DownloadForm(area, saveDir, sourceId, historicalSource, tileNames is { Count: > 0 } ? tileNames : null);
         if (dialog.ShowDialog(this) != DialogResult.OK) return null;
         return new DownloadJob
         {

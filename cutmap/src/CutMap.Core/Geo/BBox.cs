@@ -23,6 +23,8 @@ public readonly record struct BBox(double West, double South, double East, doubl
     /// </summary>
     public bool IsValid(out string reason)
     {
+        if (!double.IsFinite(West) || !double.IsFinite(South) || !double.IsFinite(East) || !double.IsFinite(North))
+        { reason = "范围必须是四个有限数值"; return false; }
         if (West >= East || South >= North)
         {
             reason = "范围为空或反向：需要 西<东 且 南<北";
@@ -40,6 +42,18 @@ public readonly record struct BBox(double West, double South, double East, doubl
         }
         reason = "";
         return true;
+    }
+
+    public static bool TryParse(string text, out BBox box)
+    {
+        box = default;
+        var parts = text.Trim().Trim('[', ']').Split([' ', ',', '，', ';'], StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length != 4) return false;
+        var numbers = new double[4];
+        for (var i = 0; i < 4; i++)
+            if (!double.TryParse(parts[i], NumberStyles.Float, CultureInfo.InvariantCulture, out numbers[i])) return false;
+        box = new BBox(numbers[0], numbers[1], numbers[2], numbers[3]);
+        return box.IsValid(out _);
     }
 
     public override string ToString() =>

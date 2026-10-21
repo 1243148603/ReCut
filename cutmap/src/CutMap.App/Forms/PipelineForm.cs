@@ -1,447 +1,138 @@
-using System.Globalization;
-using CutMap.Core.Geo;
-using CutMap.Core.Vector;
+using CutMap.App.Jobs;
 using CutMap.App.Ui;
+using CutMap.Core.Geo;
+using CutMap.Core.Store;
+using CutMap.Core.Terrain;
+using CutMap.Core.Vector;
 
 namespace CutMap.App.Forms;
 
-/// <summary>
-/// 「一键生产」：把 拼接裁剪 → 切片 → 打包 三段的参数收在一个对话框里，
-/// 确定后由主窗口按序入队、串行跑完；链路里任一环失败，剩下的自动跳过。
-///
-/// **为什么不是三次对话框**：三段的输入/输出是一条直线
-/// （dem_clipped.tif → cesium_terrain → layer.json/zip），让用户手填三次既啰嗦
-/// 又容易把下游路径写错——而且错要到跑完才暴露。这里只让用户定
-/// 「输入什么、裁到哪、产物放哪」，中间产物路径由程序推导并在界面上列出来。
-/// </summary>
 public sealed class PipelineForm : ThemedForm
 {
-    private const string TifName = "dem_clipped.tif";
-    private const string TilesName = "cesium_terrain";
-
-    private readonly ListView _inputs = new();
+    private readonly TabControl _tabs = new() { Dock = DockStyle.Fill };
+    private readonly TabPage _data = new("输入与步骤"), _clip = new("拼接裁剪"), _slice = new("切片"), _export = new("导出");
     private readonly List<RasterInfo> _infos = [];
-
-    private readonly TextBox[] _bounds = new TextBox[4];
-    private readonly Button _fillFromInputs = new();
-    private readonly CheckBox _useBoundary = new();
-    private readonly Button _pickBoundary = new();
-    private readonly Label _boundarySummary = new();
-    // **惰性**：构造时解析 25 MB 边界 GeoJSON 会让「打开窗口」卡 10 秒
-    //（实测 10.8 s vs 0.8 s）。改成用到才取——配合 MainForm 启动时的后台预热，
-    // 真到用时命中的是缓存。
-    private BoundaryStore? _boundaryStoreLazy;
-    private BoundaryStore BoundaryData => _boundaryStoreLazy ??= BoundaryStore.Locate();
+    private readonly ListView _inputs = new() { View = View.Details, FullRowSelect = true, Height = 190, Width = 820 };
+    private readonly CheckBox _mosaic = Toggle("拼接裁剪", true), _slicing = Toggle("切片", true), _packaging = Toggle("打包 / layer.json", true);
+    private readonly CheckBox _tiles = Toggle("前端瓦片", true), _algo = Toggle("算法 GeoTIFF + 元数据", true), _boundary = Toggle("按行政边界裁剪");
+    private readonly CheckBox _zipTiles = Toggle("瓦片 zip"), _zipAlgo = Toggle("算法 zip");
+    private readonly TextBox _root = Box(), _existing = Box(), _bounds = Box(), _zoom = Box(), _layerBounds = Box(), _layerZoom = Box();
+    private readonly TextBox _name = Box("terrain"), _description = Box("Cesium terrain tiles"), _version = Box("1.0.0");
+    private readonly ComboBox _resampling = new() { Width = 220, DropDownStyle = ComboBoxStyle.DropDownList };
+    private readonly Label _reference = new() { AutoSize = true, MaximumSize = new Size(780, 0), Text = "选择 DEM 后显示参考层级。" };
+    private readonly Label _boundaryLabel = new() { Text = "未选边界", AutoSize = true };
+    private readonly Label _status = new() { AutoSize = true, MaximumSize = new Size(820, 0), Dock = DockStyle.Fill };
+    private readonly Button _start = new() { Text = "开始执行", AutoSize = true };
     private IReadOnlyList<BoundaryFeature> _boundaries = [];
+    public IReadOnlyList<Job> PlannedJobs { get; private set; } = [];
 
-    private readonly TextBox _root = new();
-    private readonly TextBox _layerName = new();
-    private readonly TextBox _layerDescription = new();
-    private readonly TextBox _layerVersion = new();
-    private readonly CheckBox _zipTiles = new();
-    private readonly CheckBox _zipAlgo = new();
-    private readonly Label _plan = new();
-    private readonly Button _ok = new();
-
-    private static readonly string[] BoundLabels = ["西", "南", "东", "北"];
-
-    public IReadOnlyList<string> InputPaths => _infos.Select(i => i.Path).ToArray();
-    public BBox Target => new(Parse(_bounds[0]), Parse(_bounds[1]), Parse(_bounds[2]), Parse(_bounds[3]));
-    public IReadOnlyList<BoundaryFeature>? Boundaries =>
-        _useBoundary.Checked && _boundaries.Count > 0 ? _boundaries : null;
-    public string RootDirectory => _root.Text.Trim();
-
-    /// <summary>中间产物路径由根目录推导——界面上会把这三步列出来，用户改根目录即可。</summary>
-    public string AlgoTifPath => Path.Combine(RootDirectory, TifName);
-    public string TilesDirectory => Path.Combine(RootDirectory, TilesName);
-
-    public bool ZipTiles => _zipTiles.Checked;
-    public bool ZipAlgo => _zipAlgo.Checked;
-    public string LayerName => Fallback(_layerName.Text, "terrain");
-    public string LayerDescription => Fallback(_layerDescription.Text, "Cesium terrain tiles");
-    public string LayerVersion => Fallback(_layerVersion.Text, "1.0.0");
-
-    private static string Fallback(string text, string fallback) =>
-        string.IsNullOrWhiteSpace(text) ? fallback : text.Trim();
-
-    public PipelineForm()
+    public PipelineForm(TaskPreset? preset = null)
     {
-        Text = "一键生产（拼接裁剪 → 切片 → 打包）";
+        Text = "新建处理向导";
         StartPosition = FormStartPosition.CenterParent;
-        Font = new Font("Microsoft YaHei UI", 9F);
-
-        // 高度按内容兜底：计划那段是随输入变化的多行文字，写死高度会把它裁掉。
-        var root = BuildLayout();
-        UpdateBoundarySummary();   // 先给区域摘要一段非空文字，避免出现 0 宽的 AutoSize 标签
-        UpdatePlan();
-        FormLayout.FitToContent(this, new Size(900, Math.Max(620, root.PreferredSize.Height + 16)));
-    }
-
-    private TableLayoutPanel BuildLayout()
-    {
-        var root = FormLayout.Root();
-        // 四行都显式声明成 AutoSize：靠 GrowStyle 自动长出来的行会和 Dock=Fill 的
-        // 分组框互相试探，结果行被撑高、分组框里留下大片空白（实测多出 150px）。
-        root.RowCount = 4;
-        for (var i = 0; i < 4; i++) root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-
-        // ---- 输入 ----
-        _inputs.View = View.Details;
-        _inputs.FullRowSelect = true;
-        _inputs.GridLines = true;
-        _inputs.Dock = DockStyle.Fill;
-        _inputs.Columns.Add("文件", 190);
-        _inputs.Columns.Add("尺寸", 90);
-        _inputs.Columns.Add("坐标系", 80);
-        _inputs.Columns.Add("范围（GDAL 外边缘）", 360);
-
-        var inputButtons = new FlowLayoutPanel
-        {
-            Dock = DockStyle.Bottom,
-            FlowDirection = FlowDirection.RightToLeft,
-            AutoSize = true,
-            WrapContents = false,
-            Padding = new Padding(0, 4, 0, 0),
-        };
-        var addFiles = new Button { Text = "添加 DEM…", Width = 92 };
-        addFiles.Click += (_, _) => AddFiles();
-        var addFolder = new Button { Text = "添加目录…", Width = 96 };
-        addFolder.Click += (_, _) => AddFolder();
-        var remove = new Button { Text = "移除选中", Width = 84 };
-        remove.Click += (_, _) => RemoveSelected();
-        var clear = new Button { Text = "清空", Width = 60 };
-        clear.Click += (_, _) => { _infos.Clear(); RefreshInputs(); UpdatePlan(); };
-        inputButtons.Controls.Add(addFiles);
-        inputButtons.Controls.Add(addFolder);
-        inputButtons.Controls.Add(remove);
-        inputButtons.Controls.Add(clear);
-
-        var inputPanel = new Panel { Dock = DockStyle.Fill, Height = 160 };
-        // 顺序不能动：填充的先加、边条的后加（WinForms 从后往前停靠）。
-        inputPanel.Controls.Add(_inputs);
-        inputPanel.Controls.Add(inputButtons);
-        root.Controls.Add(FormLayout.Section("输入 DEM（多幅自动拼接）", inputPanel), 0, 0);
-
-        // ---- 裁剪范围 ----
-        for (var i = 0; i < 4; i++)
-        {
-            var box = new TextBox { Width = 96 };
-            box.TextChanged += (_, _) => UpdatePlan();
-            _bounds[i] = box;
-        }
-
-        _fillFromInputs.Text = "用输入范围";
-        _fillFromInputs.Width = 104;
-        _fillFromInputs.Click += (_, _) => FillFromInputs();
-        _pickBoundary.Text = "选择边界…";
-        _pickBoundary.Width = 104;
-        _pickBoundary.Click += (_, _) => PickBoundary();
-        _boundarySummary.AutoSize = true;
-        _boundarySummary.ForeColor = SystemColors.GrayText;
-        _boundarySummary.Margin = new Padding(12, 8, 0, 0);
-
-        // 行一律用 FlowLayoutPanel（AutoSize）：嵌套的 Dock=Fill 网格放进 AutoSize 行里
-        // 量不出宽度，输入框会被挤成一条（第一版就是这么坏的）。
-        var sourceButtons = new FlowLayoutPanel { AutoSize = true, WrapContents = true, Margin = new Padding(0, 6, 0, 0) };
-        sourceButtons.Controls.Add(_fillFromInputs);
-        sourceButtons.Controls.Add(_pickBoundary);
-        sourceButtons.Controls.Add(_boundarySummary);
-
-        _useBoundary.Text = "按行政区划裁剪";
-        _useBoundary.AutoSize = true;
-        _useBoundary.CheckedChanged += (_, _) => { UpdateBoundarySummary(); UpdatePlan(); };
-        var boundaryNote = new Label
-        {
-            AutoSize = true,
-            Text = "（勾选后按边界裁、边界外补平坦裙边；不勾就是矩形）",
-            ForeColor = SystemColors.GrayText,
-            Margin = new Padding(12, 8, 0, 0),
-        };
-        var boundaryRow = new FlowLayoutPanel { AutoSize = true, WrapContents = true, Margin = new Padding(0, 6, 0, 0) };
-        boundaryRow.Controls.Add(_useBoundary);
-        boundaryRow.Controls.Add(boundaryNote);
-
-        // 三段都横排、纵向依次堆叠：用 TopDown 的 FlowLayoutPanel 而不是表格，
-        // 高度完全由内容决定（表格 + Dock=Fill 的分组框会互相试探，留下空白）。
-        var boundsRow = FormLayout.BoundsRow(_bounds, BoundLabels);
-        boundsRow.Dock = DockStyle.None;
-        boundsRow.Margin = new Padding(0);
-        var rangeGrid = new FlowLayoutPanel
-        {
-            Dock = DockStyle.Top,
-            FlowDirection = FlowDirection.TopDown,
-            WrapContents = false,
-            AutoSize = true,
-            AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            Margin = new Padding(0),
-        };
-        rangeGrid.Controls.Add(boundsRow);
-        rangeGrid.Controls.Add(sourceButtons);
-        rangeGrid.Controls.Add(boundaryRow);
-        root.Controls.Add(FormLayout.Section("裁剪范围", rangeGrid), 0, 1);
-
-        // ---- 输出与 layer.json ----
-        foreach (var box in new[] { _root, _layerName, _layerDescription }) box.Width = 430;
-        var outGrid = FormLayout.Grid(FormLayout.Fixed(96), FormLayout.Fixed(440), FormLayout.Fixed(84));
-        outGrid.AddRow(FormLayout.FieldLabel("根目录：", 90), _root, BrowseButton());
-        outGrid.AddRow(FormLayout.FieldLabel("name：", 90), _layerName, null);
-        outGrid.AddRow(FormLayout.FieldLabel("description：", 90), _layerDescription, null);
-        outGrid.AddRow(FormLayout.FieldLabel("version：", 90), VersionZipRow(), null);
-        outGrid.AddRowSpanning(_plan, 3);
-        root.Controls.Add(FormLayout.Section("输出与 layer.json（中间产物路径自动推导）", outGrid), 0, 2);
-
-        _layerName.Text = "terrain";
-        _layerDescription.Text = "Cesium terrain tiles";
-        _layerVersion.Text = "1.0.0";
-        _layerName.TextChanged += (_, _) => UpdatePlan();
-        _root.TextChanged += (_, _) => UpdatePlan();
-
-        // ---- 按钮 ----
+        FormLayout.Resizable(this, new Size(940, 700), new Size(850, 600));
+        _inputs.Columns.Add("完整路径", 380); _inputs.Columns.Add("坐标系 / 尺寸 / 分辨率", 420);
+        Add(_data, _inputs, Row(Button("添加 DEM…", AddFiles), Button("移除选中", RemoveInputs)),
+            Row(_mosaic, _slicing, _packaging), Row(_tiles, _algo),
+            Field("输出根目录", _root, () => Browse(_root)),
+            Field("已有瓦片（跳过切片时）", _existing, () => Browse(_existing)),
+            Theme.Hint("跳过拼接时选单幅现成 DEM；跳过切片时指定已有瓦片。下载 DEM 从工具条进入。"));
+        _resampling.Items.AddRange(["bilinear", "near", "cubic", "average"]); _resampling.SelectedIndex = 0;
+        Add(_clip, Field("范围：西 南 东 北", _bounds),
+            Row(Button("使用输入范围", () => { if (Coverage.Union(_infos) is { } b) _bounds.Text = string.Join(" ", b.ToTeArguments()); }),
+                Button("重庆全域", () => _bounds.Text = "105.3 28.1 110.2 32.2")),
+            Row(_boundary, Button("选择边界…", PickBoundary), _boundaryLabel), Field("重采样", _resampling));
+        Add(_slice, Field("最大层级（留空自动）", _zoom), _reference);
+        Add(_export, Row(_zipTiles, _zipAlgo), Field("name", _name), Field("description", _description), Field("version", _version),
+            Field("layer bounds（留空反推）", _layerBounds), Field("layer maxzoom（留空反推）", _layerZoom),
+            Theme.Hint("算法数据共用裁剪结果；未裁剪时保留原 TIFF，只生成实测元数据。"));
+        var root = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 3, ColumnCount = 1, Padding = new Padding(12) };
+        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        root.Controls.Add(_tabs, 0, 0); root.Controls.Add(_status, 0, 1);
         var cancel = new Button { Text = "取消", DialogResult = DialogResult.Cancel };
-        _ok.Text = "开始生产";
-        _ok.Click += (_, _) => { DialogResult = DialogResult.OK; Close(); };
-        root.Controls.Add(FormLayout.ButtonRow(_ok, cancel), 0, 3);
-
-        _plan.AutoSize = true;
-        _plan.MaximumSize = new Size(860, 0);
-        _plan.MinimumSize = new Size(0, 96);   // 预留计划文字的高度，内容多时不会顶掉下方按钮
-        _plan.ForeColor = SystemColors.ControlText;
-
-        Controls.Add(root);
-        AcceptButton = _ok;
-        CancelButton = cancel;
-        return root;
-    }
-
-    private Button BrowseButton()
-    {
-        var browse = new Button { Text = "浏览…", Width = 80 };
-        browse.Click += (_, _) =>
+        root.Controls.Add(FormLayout.ButtonRow(_start, Button("下一步", () => _tabs.SelectedIndex = Math.Min(_tabs.TabCount - 1, _tabs.SelectedIndex + 1)),
+            Button("上一步", () => _tabs.SelectedIndex = Math.Max(0, _tabs.SelectedIndex - 1)), cancel), 0, 2);
+        Controls.Add(root); CancelButton = cancel;
+        _start.Click += (_, _) => { try { PlannedJobs = Plan().CreateJobs(); DialogResult = DialogResult.OK; Close(); } catch (Exception ex) { _status.Text = ex.Message; } };
+        foreach (var c in new[] { _mosaic, _slicing, _packaging, _tiles, _algo, _boundary, _zipTiles, _zipAlgo }) c.CheckedChanged += (_, _) => UpdatePlan();
+        foreach (var c in new[] { _root, _existing, _bounds, _zoom, _layerBounds, _layerZoom, _name, _description, _version }) c.TextChanged += (_, _) => UpdatePlan();
+        if (preset is not null)
         {
-            using var dialog = new FolderBrowserDialog { Description = "选择产物根目录" };
-            if (dialog.ShowDialog(this) == DialogResult.OK) _root.Text = dialog.SelectedPath;
-        };
-        return browse;
+            _bounds.Text = preset.ClipBox is { } b ? string.Join(" ", b.ToTeArguments()) : "";
+            _zoom.Text = preset.MaxZoom?.ToString() ?? ""; _resampling.SelectedItem = preset.Resampling;
+            _name.Text = preset.LayerName; _description.Text = preset.LayerDescription; _version.Text = preset.LayerVersion;
+            _zipTiles.Checked = preset.ZipTiles; _zipAlgo.Checked = preset.ZipAlgo;
+            if (preset.BoundaryCodes is { Length: > 0 }) { _boundaries = BoundaryStore.Locate().All.Where(b => preset.BoundaryCodes.Contains(b.Code)).ToArray(); _boundary.Checked = _boundaries.Count > 0; }
+        }
+        UpdatePlan();
     }
-
-    /// <summary>version 输入框与两个 zip 勾选合成一行（FlowLayoutPanel：宽度按内容，不会被挤）。</summary>
-    private Control VersionZipRow()
+    private static CheckBox Toggle(string text, bool check = false) => new() { Text = text, AutoSize = true, Checked = check };
+    private static TextBox Box(string text = "") => new() { Text = text, Width = 440 };
+    private static Button Button(string text, Action action) { var b = new Button { Text = text, AutoSize = true }; b.Click += (_, _) => action(); return b; }
+    private static Control Row(params Control[] controls) { var row = new FlowLayoutPanel { AutoSize = true, WrapContents = true, Width = 820 }; row.Controls.AddRange(controls); return row; }
+    private static Control Field(string label, Control value, Action? browse = null)
     {
-        _layerVersion.Width = 120;
-        _zipTiles.Text = "瓦片 zip";
-        _zipTiles.AutoSize = true;
-        _zipTiles.Margin = new Padding(18, 5, 0, 0);
-        _zipTiles.CheckedChanged += (_, _) => UpdatePlan();
-        _zipAlgo.Text = "算法 zip";
-        _zipAlgo.AutoSize = true;
-        _zipAlgo.Margin = new Padding(14, 5, 0, 0);
-        _zipAlgo.CheckedChanged += (_, _) => UpdatePlan();
-
-        var row = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0) };
-        row.Controls.Add(_layerVersion);
-        row.Controls.Add(_zipTiles);
-        row.Controls.Add(_zipAlgo);
-        return row;
+        var controls = new List<Control> { new Label { Text = label, Width = 220, AutoSize = false, Height = 28 }, value };
+        if (browse is not null) controls.Add(Button("浏览…", browse));
+        return Row(controls.ToArray());
     }
-
-    // ---------------------------------------------------------------- 输入
-
+    private static void Add(TabPage page, params Control[] controls)
+    {
+        var panel = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new Padding(12) };
+        panel.Controls.AddRange(controls); page.Controls.Add(panel);
+    }
+    private void Browse(TextBox box) { using var d = new FolderBrowserDialog(); if (d.ShowDialog(this) == DialogResult.OK) box.Text = d.SelectedPath; }
     private void AddFiles()
     {
-        using var dialog = new OpenFileDialog
+        using var d = new OpenFileDialog { Filter = "GeoTIFF|*.tif;*.tiff", Multiselect = true };
+        if (d.ShowDialog(this) != DialogResult.OK) return;
+        foreach (var file in d.FileNames)
         {
-            Title = "选择 DEM（可多选）",
-            Filter = "GeoTIFF (*.tif;*.tiff)|*.tif;*.tiff|所有文件 (*.*)|*.*",
-            Multiselect = true,
-        };
-        if (dialog.ShowDialog(this) != DialogResult.OK) return;
-        AddPaths(dialog.FileNames);
-    }
-
-    /// <summary>按目录添加：把目录下的 *.tif 全加进来（下载完一批后的常见操作）。</summary>
-    private void AddFolder()
-    {
-        using var dialog = new FolderBrowserDialog { Description = "选择含 DEM 分幅的目录" };
-        if (dialog.ShowDialog(this) != DialogResult.OK) return;
-
-        var files = Directory.EnumerateFiles(dialog.SelectedPath, "*.tif", SearchOption.TopDirectoryOnly)
-                             .OrderBy(p => p, StringComparer.Ordinal)
-                             .ToArray();
-        if (files.Length == 0)
-        {
-            MessageBox.Show(this, "这个目录下没有 *.tif。", "没找到 DEM",
-                            MessageBoxButtons.OK, MessageBoxIcon.Information);
-            return;
+            if (_infos.Any(i => i.Path == file)) continue;
+            try { var info = RasterInfo.Read(file); _infos.Add(info); _inputs.Items.Add(new ListViewItem([file, info.Summary()]) { Tag = info }); }
+            catch (RasterException ex) { MessageBox.Show(this, ex.Message, "无法读取 DEM"); }
         }
-        AddPaths(files);
-    }
-
-    private void AddPaths(IEnumerable<string> paths)
-    {
-        var failed = 0;
-        foreach (var path in paths.OrderBy(p => p, StringComparer.Ordinal))
-        {
-            if (_infos.Any(i => string.Equals(i.Path, path, StringComparison.OrdinalIgnoreCase))) continue;
-            try
-            {
-                _infos.Add(RasterInfo.Read(path));
-            }
-            catch (RasterException)
-            {
-                failed++;   // 单个文件读不了不该打断整批添加
-            }
-        }
-        RefreshInputs();
-        UpdatePlan();
-        if (failed > 0)
-            AppendPlanNote($"{failed} 个文件读不了，已跳过");
-    }
-
-    private void RemoveSelected()
-    {
-        foreach (ListViewItem item in _inputs.SelectedItems)
-            if (item.Tag is RasterInfo info) _infos.Remove(info);
-        RefreshInputs();
+        if (string.IsNullOrWhiteSpace(_bounds.Text) && Coverage.Union(_infos) is { } b) _bounds.Text = string.Join(" ", b.ToTeArguments());
         UpdatePlan();
     }
-
-    private void RefreshInputs()
-    {
-        _inputs.BeginUpdate();
-        _inputs.Items.Clear();
-        foreach (var info in _infos.OrderBy(i => i.Path, StringComparer.Ordinal))
-        {
-            var item = new ListViewItem(Path.GetFileName(info.Path)) { Tag = info };
-            item.SubItems.Add($"{info.Width}×{info.Height}");
-            item.SubItems.Add(info.EpsgCode is { } epsg ? $"EPSG:{epsg}" : "未识别");
-            item.SubItems.Add(info.Extent.ToString());
-            _inputs.Items.Add(item);
-        }
-        _inputs.EndUpdate();
-    }
-
-    private string? _note;
-
-    private void AppendPlanNote(string note)
-    {
-        _note = note;
-        UpdatePlan();
-    }
-
-    // ---------------------------------------------------------------- 范围
-
-    private void FillFromInputs()
-    {
-        if (Coverage.Union(_infos) is not { } union)
-        {
-            AppendPlanNote("还没有输入 DEM，先添加输入文件。");
-            return;
-        }
-        _boundingNoteClear();
-        SetBounds(union);
-    }
-
-    private void _boundingNoteClear() => _note = null;
-
-    private void SetBounds(BBox box)
-    {
-        _bounds[0].Text = box.West.ToString(CultureInfo.InvariantCulture);
-        _bounds[1].Text = box.South.ToString(CultureInfo.InvariantCulture);
-        _bounds[2].Text = box.East.ToString(CultureInfo.InvariantCulture);
-        _bounds[3].Text = box.North.ToString(CultureInfo.InvariantCulture);
-        UpdatePlan();
-    }
-
+    private void RemoveInputs() { foreach (ListViewItem item in _inputs.SelectedItems) { _infos.Remove((RasterInfo)item.Tag!); _inputs.Items.Remove(item); } UpdatePlan(); }
     private void PickBoundary()
     {
-        if (BoundaryData.IsEmpty)
-        {
-            MessageBox.Show(this, BoundaryData.Describe(), "没有边界数据",
-                            MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            return;
-        }
-        using var picker = new BoundaryPickerForm(BoundaryData);
+        using var picker = new BoundaryPickerForm(BoundaryStore.Locate());
         if (picker.ShowDialog(this) != DialogResult.OK) return;
-        _boundaries = picker.Selected;
-        _useBoundary.Checked = true;
-        UpdateBoundarySummary();
-        UpdatePlan();
+        _boundaries = picker.Selected; _boundary.Checked = true;
+        _boundaryLabel.Text = string.Join("、", _boundaries.Select(b => b.Name)); UpdatePlan();
     }
-
-    private void UpdateBoundarySummary()
+    private static int? Zoom(TextBox box)
     {
-        // 永远给一段非空文字：AutoSize 的空标签宽度为 0，排版自检会报硬错误。
-        _boundarySummary.Text = !_useBoundary.Checked
-            ? "（未按行政区划）"
-            : _boundaries.Count == 0
-                ? "尚未选择区域。"
-                : "已选 " + string.Join("、", _boundaries.Select(b => b.Name));
+        if (string.IsNullOrWhiteSpace(box.Text)) return null;
+        if (!int.TryParse(box.Text, out var n) || n < 0 || n > 30) throw new ArgumentException("层级应为 0–30 整数或留空。");
+        return n;
     }
-
-    // ---------------------------------------------------------------- 计划
-
+    private PipelinePlan Plan()
+    {
+        BBox target = default;
+        if (_mosaic.Checked && !_boundary.Checked && !BBox.TryParse(_bounds.Text, out target)) throw new ArgumentException("请填写有效裁剪范围。");
+        if (_mosaic.Checked && _boundary.Checked && _boundaries.Count == 0) throw new ArgumentException("请选择裁剪边界。");
+        BBox? layer = null;
+        if (_packaging.Checked && _tiles.Checked && !string.IsNullOrWhiteSpace(_layerBounds.Text))
+        { if (!BBox.TryParse(_layerBounds.Text, out var b)) throw new ArgumentException("layer bounds 无效。"); layer = b; }
+        return new PipelinePlan(_infos.Select(i => i.Path).ToArray(), _root.Text.Trim(), _mosaic.Checked, _slicing.Checked, _packaging.Checked,
+            _tiles.Checked, _algo.Checked, target, _existing.Text.Trim(), _mosaic.Checked && _boundary.Checked ? _boundaries : null,
+            _slicing.Checked ? Zoom(_zoom) : null, _resampling.SelectedItem?.ToString() ?? "bilinear", _zipTiles.Checked, _zipAlgo.Checked,
+            _name.Text, _description.Text, _version.Text, layer, _packaging.Checked && _tiles.Checked ? Zoom(_layerZoom) : null, _infos);
+    }
     private void UpdatePlan()
     {
-        var problems = new List<string>();
-        if (_infos.Count == 0) problems.Add("先添加输入 DEM");
-
-        BBox target = default;
-        if (Boundaries is { } picked)
-        {
-            target = BoundaryExport.UnionBounds(picked);
-            if (target.IsValid(out _))
-            {
-                var coverage = Coverage.Check(_infos, target);
-                if (_infos.Count > 0 && !coverage.Covered) problems.Add("输入盖不住目标：" + coverage.Describe());
-            }
-        }
-        else
-        {
-            target = Target;
-            if (double.IsNaN(target.West) || double.IsNaN(target.South) ||
-                double.IsNaN(target.East) || double.IsNaN(target.North))
-            {
-                problems.Add("裁剪范围要填四个数，或点「用输入范围」/ 勾「按行政区划」");
-            }
-            else if (!target.IsValid(out var invalid))
-            {
-                problems.Add(invalid);
-            }
-            else if (_infos.Count > 0)
-            {
-                var coverage = Coverage.Check(_infos, target);
-                if (!coverage.Covered) problems.Add("输入盖不住目标：" + coverage.Describe());
-            }
-        }
-
-        if (string.IsNullOrWhiteSpace(RootDirectory)) problems.Add("选一个输出根目录");
-        else if (RootDirectory.IndexOfAny(Path.GetInvalidPathChars()) >= 0) problems.Add("输出目录路径不合法");
-
-        if (problems.Count > 0)
-        {
-            _plan.Text = "还不能开始：" + string.Join("；", problems)
-                       + (_note is null ? "" : "\n· " + _note);
-            _plan.ForeColor = Color.Firebrick;
-            _ok.Enabled = false;
-            return;
-        }
-
-        var lines = new List<string>
-        {
-            $"① 拼接裁剪（{(Boundaries is null ? "矩形" : "行政区划")}模式）→ {AlgoTifPath}",
-            $"② 切片（层级自动）→ {TilesDirectory}",
-            $"③ 打包 → layer.json{(ZipTiles ? " + 瓦片 zip" : "")}{(ZipAlgo ? " + 算法 zip" : "")}（在 {RootDirectory}）",
-        };
-        if (File.Exists(AlgoTifPath)) lines.Add("· 注意：已有同名 dem_clipped.tif，会被覆盖");
-        if (Directory.Exists(TilesDirectory)) lines.Add("· 注意：已有 cesium_terrain 目录，里面的瓦片会被覆盖");
-        if (_note is not null) lines.Add("· " + _note);
-
-        _plan.Text = string.Join("\n", lines);
-        _plan.ForeColor = SystemColors.ControlText;
-        _ok.Enabled = true;
+        if (!_tiles.Checked && _slicing.Checked) _slicing.Checked = false;
+        _slicing.Enabled = _tiles.Checked; _zipTiles.Enabled = _packaging.Checked && _tiles.Checked; _zipAlgo.Enabled = _packaging.Checked && _algo.Checked;
+        var pages = new List<TabPage> { _data };
+        if (_mosaic.Checked) pages.Add(_clip); if (_slicing.Checked) pages.Add(_slice); if (_packaging.Checked || _algo.Checked) pages.Add(_export);
+        var current = _tabs.SelectedTab;
+        if (!_tabs.TabPages.Cast<TabPage>().SequenceEqual(pages)) { _tabs.TabPages.Clear(); _tabs.TabPages.AddRange(pages.ToArray()); if (current is not null && pages.Contains(current)) _tabs.SelectedTab = current; }
+        try { var jobs = Plan().CreateJobs(); _status.Text = string.Join(" → ", jobs.Select(j => j.TypeName + "：" + j.Display)); _status.ForeColor = SystemColors.ControlText; _start.Enabled = true; }
+        catch (Exception ex) when (ex is ArgumentException or IOException or RasterException or InvalidOperationException) { _status.Text = ex.Message; _status.ForeColor = Color.Firebrick; _start.Enabled = false; }
+        if (_infos.Count > 0) _reference.Text = $"自动参考 {CtbGrid.ReferenceMaxZoom(_infos[0].PixelSizeX)} 级；超过参考值不会更清晰，瓦片数每级约 ×4，超出护栏会拒绝。";
     }
-
-    private static double Parse(TextBox box) =>
-        double.TryParse(box.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out var v)
-            ? v : double.NaN;
 }

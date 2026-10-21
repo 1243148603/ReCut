@@ -1,0 +1,25 @@
+仓库根：D:\Map\cutmap\_gate\release-source-39c9453
+SDK: C:\Users\hwj\AppData\Local\Microsoft\dotnet\dotnet.exe
+== 1/4 发布 App（自包含 win-x64）==
+  正在确定要还原的项目…
+  所有项目均是最新的，无法还原。
+  CutMap.Core -> D:\Map\cutmap\_gate\release-source-39c9453\cutmap\src\CutMap.Core\bin\Release\net8.0\CutMap.Core.dll
+  CutMap.App -> D:\Map\cutmap\_gate\release-source-39c9453\cutmap\src\CutMap.App\bin\Release\net8.0-windows\win-x64\CutMap.App.dll
+  CutMap.App -> D:\Map\cutmap\_gate\release-source-39c9453\dist\CutMap-0.1.1\
+== 2/4 发布 CLI（同目录，共用运行时）==
+  正在确定要还原的项目…
+  所有项目均是最新的，无法还原。
+  CutMap.Core -> D:\Map\cutmap\_gate\release-source-39c9453\cutmap\src\CutMap.Core\bin\Release\net8.0\CutMap.Core.dll
+  CutMap.Cli -> D:\Map\cutmap\_gate\release-source-39c9453\cutmap\src\CutMap.Cli\bin\Release\net8.0\win-x64\CutMap.Cli.dll
+  CutMap.Cli -> D:\Map\cutmap\_gate\release-source-39c9453\dist\CutMap-0.1.1\
+== 3/4 组装 ==
+   已带三份行政区划边界（不带本机配置或抓取缓存）
+   自包含校验通过（186 个运行时程序集）
+== 4/4 压缩 ==
+
+完成：D:\Map\cutmap\_gate\release-source-39c9453\dist\CutMap-0.1.1-win-x64.zip（154.7 MB）
+
+自检建议（这三条没过，包就不算能交付）：
+  1. 把 zip 解到一个没装过 .NET / Anaconda 的目录
+  2. 双击 CutMap.App.exe —— 应当直接起窗，不报 "You must install or update .NET"
+  3. 走一遍 拼接裁剪 → 切片 → 打包

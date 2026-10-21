@@ -1,0 +1,14 @@
+PASS release zip excludes local keys, configuration and fetch cache
+PASS release zip contains exactly three boundary datasets
+PASS SHA256 CutMap.App.dll
+PASS SHA256 CutMap.Core.dll
+PASS SHA256 CutMap.Cli.dll
+PASS SHA256 ctb/bin/ctb-tile.exe
+PASS SHA256 resources/中国_省.geojson
+PASS SHA256 resources/中国_市.geojson
+PASS SHA256 resources/中国_县.geojson
+PASS self-contained coreclr.dll included
+Source revision: 39c9453
+Version: 0.1.1
+BD64E16A491AA58D579CCF32341F1BD9C3581DCEE280AF20078AAE3329E8CB70  CutMap-0.1.1-Setup-win-x64.exe  (233806982 bytes)
+2F27FE22C5DFC9840DEBC797CB6CB4D16A645E61F30F7529CADA4AA897794437  CutMap-0.1.1-win-x64.zip  (162172051 bytes)

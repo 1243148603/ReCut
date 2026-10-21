@@ -1,0 +1,2 @@
+GDAL 3.13.3
+PROJ_DATA (unset)

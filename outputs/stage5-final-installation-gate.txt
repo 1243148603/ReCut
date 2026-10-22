@@ -1,0 +1,16 @@
+GDAL 3.13.3
+PROJ_DATA (unset)
+PASS Initial installation exits successfully
+PASS Application and bundled runtime exist
+PASS Bundled CTB exists
+PASS Correct version registered in isolated HKCU key
+PASS Installed CLI starts with bundled GIS runtime
+PASS Upgrade exits successfully
+PASS Upgrade preserves unknown user data
+PASS Upgrade preserves expected program content
+PASS Non-program directory install is rejected
+PASS Rejected install preserves foreign file
+PASS Uninstall exits successfully
+PASS Uninstall removes application and registry entry
+PASS Uninstall preserves files not installed by CutMap
+Evidence directory: D:\Map\cutmap\_gate\inno-validation-6253b5608cc74c1c9a42f1ab9ddb87a6

@@ -1,0 +1,26 @@
+﻿GDAL 3.13.3
+PROJ_DATA (unset)
+输入：dem.tif
+  512×512，EPSG:4326，原像元 0.000277778×0.000277778（CRS 单位），切片参考 1.000″，GDT_Float32，nodata=无
+  范围（GDAL 口径）：[106.04527777777777, 28.712500000000002, 106.18749999999999, 28.854722222222225]
+  推导最深层级：14（公式 ceil(log2((180/65)/像元度数))）
+  实际使用层级：10（显式指定，与推导值不同）
+输出：D:\Map\work\approved-remediation\package-smoke-500f2e2f23d042cdb5e4e0ebd5d908d0
+
+   10%
+   20%
+   30%
+   40%
+   50%
+   60%
+   70%
+   80%
+   90%
+  100%
+
+ctb-tile 用时 1.2 s（含对账共 1.5 s）
+预期：最深 10 级，共 20 个瓦片，约 0.00 GB，预计 0.0 分钟
+实际：逐层与预期完全一致，合计 20 个瓦片
+
+PASS  M1：瓦片数与基线一致
+PASS Foreign working directory; development tools removed from PATH; DOTNET_ROOT invalid; explicit GDAL/PROJ environment removed; bundled slicing succeeded.

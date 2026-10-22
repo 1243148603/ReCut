@@ -1,0 +1,28 @@
+﻿{
+    "version":  "0.1.2",
+    "source_revision":  "4538453464223ff01c01ab56b89849c97986e3a3",
+    "zip_manifest_checks":  {
+                                "CutMap.App.dll":  true,
+                                "CutMap.Core.dll":  true,
+                                "CutMap.Cli.dll":  true,
+                                "ctb/bin/ctb-tile.exe":  true,
+                                "resources/中国_省.geojson":  true,
+                                "resources/中国_市.geojson":  true,
+                                "resources/中国_县.geojson":  true,
+                                "resources/boundary-manifest.json":  true
+                            },
+    "installer_checks_passed":  13,
+    "overall_acceptance_passed":  false,
+    "files":  [
+                  {
+                      "file":  "CutMap-0.1.2-win-x64.zip",
+                      "bytes":  162206950,
+                      "sha256":  "5C3B423EB5F401A571F03A08F858D225DDD86374D516F7B654E365BE89DB3A03"
+                  },
+                  {
+                      "file":  "CutMap-0.1.2-Setup-win-x64.exe",
+                      "bytes":  138168881,
+                      "sha256":  "DECAFA7A6A7A10815FE47381CACF36D3246E88D872F6585EBE6E05B8854F95ED"
+                  }
+              ]
+}

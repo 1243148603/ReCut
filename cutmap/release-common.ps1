@@ -23,7 +23,7 @@ function Use-CutMapSdk {
 function Write-CutMapBuildInfo([string]$Stage, [string]$Version, [string]$Revision) {
     $files = [ordered]@{}
     foreach ($relative in @('CutMap.App.dll', 'CutMap.Core.dll', 'CutMap.Cli.dll',
-        'ctb/bin/ctb-tile.exe', 'resources/中国_省.geojson', 'resources/中国_市.geojson', 'resources/中国_县.geojson')) {
+        'ctb/bin/ctb-tile.exe', 'resources/中国_省.geojson', 'resources/中国_市.geojson', 'resources/中国_县.geojson', 'resources/boundary-manifest.json')) {
         $files[$relative] = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $Stage $relative)).Hash
     }
     $data = [ordered]@{ version = $Version; revision = $Revision; built_at_utc = [DateTime]::UtcNow.ToString('o'); sha256 = $files }

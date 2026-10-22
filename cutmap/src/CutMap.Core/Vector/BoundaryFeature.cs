@@ -24,7 +24,8 @@ public sealed record BoundaryFeature(
     string? Code,
     BoundaryLevel Level,
     BBox Bounds,
-    string GeometryJson)
+    string GeometryJson,
+    string? Source = null)
 {
     /// <summary>是不是可用于裁剪的行政区域。境界线（无编码）不是。</summary>
     public bool IsAdministrative => !string.IsNullOrWhiteSpace(Code);

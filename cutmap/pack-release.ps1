@@ -82,11 +82,13 @@ if (Test-Path $resourcesDir) {
     foreach ($boundaryName in @('中国_省.geojson', '中国_市.geojson', '中国_县.geojson')) {
         Copy-Item -LiteralPath (Join-Path $resourcesDir $boundaryName) -Destination $resStage -Force
     }
+    Copy-Item -LiteralPath (Join-Path $resourcesDir 'boundary-manifest.json') -Destination $resStage -Force
     Write-Host '   已带三份行政区划边界（不带本机配置或抓取缓存）'
 } else {
     Write-Host '   未找到 resources\ —— 行政区划选择器在包里会提示缺数据'
 }
 Copy-Item (Join-Path $cutmapDir 'THIRD-PARTY-NOTICES.txt') $stage -Force
+Copy-Item (Join-Path $cutmapDir 'CTB-LICENSE.txt') $stage -Force
 Copy-Item (Join-Path $cutmapDir 'README.md') $stage -Force
 Write-CutMapBuildInfo -Stage $stage -Version $version -Revision $SourceRevision
 

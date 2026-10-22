@@ -35,6 +35,7 @@ public sealed class BoundaryStore
 
     private readonly List<BoundaryFeature> _features = [];
     private readonly List<string> _missing = [];
+    private string? _importDirectory;
 
     /// <summary>code → 实际存在的上级 code。载入后由 ResolveHierarchy 建好。</summary>
     private readonly Dictionary<string, string?> _parentOf = new(StringComparer.Ordinal);
@@ -49,7 +50,7 @@ public sealed class BoundaryStore
     /// <summary>被滤掉的"境界线"要素数（无编码的非行政要素）。</summary>
     public int SkippedNonAdministrative { get; private set; }
 
-    public static BoundaryStore Load(string resourcesDirectory)
+    public static BoundaryStore Load(string resourcesDirectory, string? importDirectory = null)
     {
         var store = new BoundaryStore();
         foreach (var (fileName, level) in BuiltInFiles)
@@ -62,6 +63,20 @@ public sealed class BoundaryStore
             }
             store.LoadFile(path, level, reportProblems: true);
         }
+        var imports = importDirectory ?? Path.Combine(CutMap.Core.Store.AppPaths.DataDirectory, "boundaries");
+        store._importDirectory = imports;
+        if (Directory.Exists(imports))
+            foreach (var path in Directory.GetFiles(imports, "*.geojson").OrderBy(File.GetLastWriteTimeUtc).ThenBy(p => p, StringComparer.Ordinal))
+            {
+                var imported = new BoundaryStore();
+                imported.LoadFile(path, BoundaryLevel.其他, reportProblems: true);
+                foreach (var feature in imported.All)
+                {
+                    var previous = store._features.FirstOrDefault(f => f.Code == feature.Code);
+                    store._features.RemoveAll(f => f.Code == feature.Code);
+                    store._features.Add(previous is null ? feature : feature with { Level = previous.Level });
+                }
+            }
         store.ResolveHierarchy();
         return store;
     }
@@ -115,9 +130,26 @@ public sealed class BoundaryStore
     /// <summary>导入外部边界（FR-14 的"数据源可替换"）。层级不明的记为「其他」。</summary>
     public ImportReport ImportExternal(string path)
     {
-        var before = _features.Count;
-        var warnings = LoadFile(path, BoundaryLevel.其他);
-        return new ImportReport(_features.Count - before, warnings);
+        var incoming = new BoundaryStore();
+        var warnings = incoming.LoadFile(path, BoundaryLevel.其他, reportProblems: true);
+        if (incoming.All.Count == 0) return new ImportReport(0, warnings);
+        var json = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            type = "FeatureCollection",
+            features = incoming.All.Select(f => new { type = "Feature", properties = new { name = f.Name, gb = f.Code, source = f.Source },
+                geometry = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(f.GeometryJson) }),
+        });
+        var imports = _importDirectory ?? Path.Combine(CutMap.Core.Store.AppPaths.DataDirectory, "boundaries");
+        var target = Path.Combine(imports, "import-" + CutMap.Core.Terrain.AlgoMetadata.Fingerprint(path) + ".geojson");
+        CutMap.Core.Store.AtomicFile.Write(target, json);
+        foreach (var feature in incoming.All)
+        {
+            var previous = _features.FirstOrDefault(f => f.Code == feature.Code);
+            _features.RemoveAll(f => f.Code == feature.Code);
+            _features.Add(previous is null ? feature : feature with { Level = previous.Level });
+        }
+        ResolveHierarchy();
+        return new ImportReport(incoming.All.Count, warnings);
     }
 
     /// <summary>
@@ -138,6 +170,7 @@ public sealed class BoundaryStore
 
         if (reportProblems) CheckCoordinateSystem(layer, path, warnings);
         var outOfRange = 0;
+        var fileHash = level == BoundaryLevel.其他 ? CutMap.Core.Terrain.AlgoMetadata.Fingerprint(path) : "";
 
         layer.ResetReading();
         Feature? feature;
@@ -145,12 +178,29 @@ public sealed class BoundaryStore
         {
             using var _ = feature;
 
-            var name = feature.GetFieldAsString("name");
-            var code = feature.GetFieldAsString("gb");
+            var name = feature.GetFieldIndex("name") >= 0 ? feature.GetFieldAsString("name") : "";
+            var code = feature.GetFieldIndex("gb") >= 0 ? feature.GetFieldAsString("gb") : "";
+            var attribution = feature.GetFieldIndex("source") >= 0 ? feature.GetFieldAsString("source") : null;
             if (string.IsNullOrWhiteSpace(name)) name = "(未命名)";
 
-            using var geometry = feature.GetGeometryRef();
-            if (geometry is null) continue;
+            using var originalGeometry = feature.GetGeometryRef();
+            if (originalGeometry is null) continue;
+            using var geometry = originalGeometry.Clone();
+            if (level == BoundaryLevel.其他)
+            {
+                using var sourceCrs = layer.GetSpatialRef();
+                if (sourceCrs is not null)
+                {
+                    sourceCrs.SetAxisMappingStrategy(OSGeo.OSR.AxisMappingStrategy.OAMS_TRADITIONAL_GIS_ORDER);
+                    using var targetCrs = new OSGeo.OSR.SpatialReference("");
+                    targetCrs.ImportFromEPSG(4326);
+                    targetCrs.SetAxisMappingStrategy(OSGeo.OSR.AxisMappingStrategy.OAMS_TRADITIONAL_GIS_ORDER);
+                    using var transform = new OSGeo.OSR.CoordinateTransformation(sourceCrs, targetCrs);
+                    if (geometry.Transform(transform) != 0) throw new InvalidDataException("边界无法转换为 WGS84。");
+                }
+                if (string.IsNullOrWhiteSpace(code) && geometry.GetGeometryName().Contains("POLYGON", StringComparison.Ordinal))
+                    code = "ext-" + fileHash[..12] + "-" + feature.GetFID();
+            }
 
             // 境界线（无编码）不是行政区域，选中它去裁剪得不到可解释的结果。
             if (string.IsNullOrWhiteSpace(code))
@@ -161,6 +211,8 @@ public sealed class BoundaryStore
 
             using var envelope = new Envelope();
             geometry.GetEnvelope(envelope);
+            if (level == BoundaryLevel.其他 && (envelope.MinX < -180 || envelope.MaxX > 180 || envelope.MinY < -90 || envelope.MaxY > 90))
+                throw new InvalidDataException("导入边界坐标仍越界，请检查 CRS 声明与实际坐标。");
 
             // 坐标明显不在经纬度范围内，多半是投影坐标（米）而非度。
             // 这种数据直接拿来当 cutline 会裁出完全错误的地方，且不报错。
@@ -173,7 +225,7 @@ public sealed class BoundaryStore
                 code.Trim(),
                 level,
                 new BBox(envelope.MinX, envelope.MinY, envelope.MaxX, envelope.MaxY),
-                geometry.ExportToJson([])));
+                geometry.ExportToJson([]), attribution ?? (level == BoundaryLevel.其他 ? "用户导入：" + Path.GetFileName(path) : SourceAttribution)));
         }
 
         if (outOfRange > 0)
@@ -222,8 +274,7 @@ public sealed class BoundaryStore
                 warnings.Add(
                     $"{name} 声明的是**投影坐标系**（{srs.GetName()}" +
                     (string.IsNullOrEmpty(epsg) ? "" : $"，EPSG:{epsg}") + "）。\n" +
-                    "本程序按经纬度使用边界，投影坐标会被当成度来读，" +
-                    "结果会偏到完全错误的位置。请先转成 EPSG:4326。");
+                    "导入时会转换为 EPSG:4326，请核对声明的坐标系与实际数据一致。");
                 return;
             }
 

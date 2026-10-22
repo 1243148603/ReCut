@@ -112,7 +112,7 @@ public sealed class MosaicJob : Job
             BoundaryExport.WriteProductBoundary(
                 exported, store.IsEmpty ? null : store, productBoundary,
                 Path.GetFileNameWithoutExtension(OutputPath),
-                sourceNotes: [BoundaryStore.SourceAttribution]);
+                sourceNotes: exported.Select(b => b.Source ?? BoundaryStore.SourceAttribution).Distinct().ToArray());
             onLog($"边界矢量：{productBoundary}");
         }
         else

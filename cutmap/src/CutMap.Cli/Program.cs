@@ -16,6 +16,8 @@ internal static class Program
 
         switch (args[0])
         {
+            case "boundary-persistence-gate":
+                return BoundaryPersistenceGate.Run(RepoRoot.Locate());
             case "coordinate-gate":
                 return CoordinateGate.Run(RepoRoot.Locate());
             case "acceptance-gate":

@@ -171,7 +171,7 @@ cd D:/Map && python serve.py --port 8080
 
 见 [cutmap/THIRD-PARTY-NOTICES.txt](cutmap/THIRD-PARTY-NOTICES.txt)。要点：
 
-- GDAL / CTB / .NET：MIT
+- GDAL / .NET：MIT；CTB：Apache License 2.0（见随包 CTB-LICENSE.txt）
 - **Copernicus DEM GLO-30**：分发产物时须注明出处
   （`Contains modified Copernicus DEM GLO-30 data, © ESA / European Commission`）
 - **行政区划数据**：来源为 **DataV.GeoAtlas**（阿里云 DataV），

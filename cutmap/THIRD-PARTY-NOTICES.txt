@@ -27,12 +27,13 @@ libpng、zlib 等）各自遵循其原有许可，详见 GDAL 发行包内的 LI
 2. cesium-terrain-builder (CTB) — 地形瓦片切片器
 --------------------------------------------------
 用途：把 GeoTIFF 切成 Cesium 地形瓦片（heightmap-1.0 格式）。
-许可：MIT License
-版权：Copyright (c) 2014, Dan Brough
+许可：Apache License, Version 2.0（以 CTB 上游 LICENSE.md 为依据，修正旧文档的 MIT 标注）
+版权：Copyright 2014 GeoData <geodata@soton.ac.uk>
 来源：https://github.com/geo-data/cesium-terrain-builder
 
 本软件以**子进程**方式调用 ctb-tile.exe，不修改也不链接其代码。
 CTB 0.4.1 由本项目自行编译，随包分发于 ctb/ 目录。
+随包保留 CTB-LICENSE.txt，原文：https://github.com/geo-data/cesium-terrain-builder/blob/master/LICENSE.md
 
 --------------------------------------------------
 3. Copernicus DEM GLO-30 — 高程数据

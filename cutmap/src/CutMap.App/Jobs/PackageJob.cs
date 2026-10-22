@@ -78,6 +78,9 @@ public sealed class PackageJob : Job
             coverage = LayerJson.InspectTiles(tilesDir);
             if (coverage is not null)
             {
+                if (LayerBounds is { } customBounds && !customBounds.IsValid(out _)) throw new ArgumentException("layer bounds 无效。");
+                if (LayerMaxZoom is { } customZoom && (customZoom < coverage.MinZoom || customZoom > coverage.DeepestZoom))
+                    throw new ArgumentException("layer maxzoom 必须位于已有瓦片层级范围内。");
                 layer = LayerJson.Create(LayerName, LayerDescription, LayerVersion,
                                          LayerBounds ?? coverage.Bounds, coverage.MinZoom, LayerMaxZoom ?? coverage.DeepestZoom);
                 onLog($"layer.json：{layer.MinZoom}–{layer.MaxZoom} 级，" +

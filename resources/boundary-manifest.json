@@ -1,0 +1,27 @@
+{
+  "format_version": "1.0",
+  "snapshot": "2026-10-22",
+  "source": "DataV.GeoAtlas",
+  "source_url": "https://datav.aliyun.com/portal/school/atlas/area_selector",
+  "acceptance_change": "2026-10-22 用户批准本版以现有 DataV 数据替代 PRD 天地图数据基准",
+  "datasets": [
+    {
+      "file": "中国_省.geojson",
+      "sha256": "75E77B5CF438824236029F5FD5ED0781C0DAFFE1D94F6864CA814DBAC2F5C11F",
+      "features": 35,
+      "crs": "urn:ogc:def:crs:EPSG::4490"
+    },
+    {
+      "file": "中国_市.geojson",
+      "sha256": "14BF53054C70A40960809A4E8C1146C02596FA7136F2EC994FF0B2B892BDD6F0",
+      "features": 363,
+      "crs": "urn:ogc:def:crs:EPSG::4490"
+    },
+    {
+      "file": "中国_县.geojson",
+      "sha256": "FCAD2C1279EB3896A8DE8FF5A58A7B74D0F662C42C30FEE0DB04155D62B0FE06",
+      "features": 2840,
+      "crs": "urn:ogc:def:crs:EPSG::4490"
+    }
+  ]
+}

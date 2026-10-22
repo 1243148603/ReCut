@@ -1,5 +1,12 @@
 # CutMap
 
+0.1.2 的标准安装包使用 Inno Setup（中文、当前用户安装），绿色版仍可解压运行。
+构建：`powershell -File cutmap\pack-inno.ps1 -Iscc <ISCC.exe路径> -SourceRevision <提交号>`。
+`pack-installer.ps1` 保留为旧自定义安装器的兼容构建入口。
+边界数据按 2026-10-22 用户批准改以现有 DataV 为本版基准，清单见 `resources/boundary-manifest.json`。
+新建任务中的多步向导支持步骤勾选与跳页；单步对话框继续可用。
+外部边界转换为 WGS84 后存入 `%APPDATA%\CutMap\boundaries`，可跨重启供历史回填。
+
 发布更新：0.1.1 修复 DEM 缺幅检查、下载完整性和源状态持久化、取消打包时旧 zip 丢失。
 安装器采用先解压校验后替换；升级前目录保留为同级 `CutMap.previous-*`，以便回退和找回误放在安装目录中的数据。
 卸载前请移走安装目录内的 DEM/瓦片；用户配置和同级升级备份不会由卸载器删除。
@@ -230,7 +237,7 @@ CutMap.Cli verify <dir> # 校验已有瓦片集能否被 Cesium 加载
 
 见 [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt)。要点：
 
-- GDAL / CTB / .NET：MIT
+- GDAL / .NET：MIT；CTB：Apache License 2.0（见随包 CTB-LICENSE.txt）
 - **Copernicus DEM GLO-30**：分发产物时须注明出处
   （`Contains modified Copernicus DEM GLO-30 data, © ESA / European Commission`）
 - **行政区划数据**：来源为天地图时，随产物分发须注明数据来源

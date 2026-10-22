@@ -10,6 +10,10 @@ internal static class RepoRoot
 {
     public static string Locate()
     {
+        // 发布目录自带 CTB，应优先使用随包依赖；从任意工作目录运行也不能
+        // 误用另一份开发仓库里的引擎或在当前目录查找不存在的 ctb。
+        if (File.Exists(Path.Combine(AppContext.BaseDirectory, "ctb", "bin", "ctb-tile.exe")))
+            return AppContext.BaseDirectory;
         foreach (var start in new[] { Directory.GetCurrentDirectory(), AppContext.BaseDirectory })
         {
             var dir = new DirectoryInfo(start);

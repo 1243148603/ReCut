@@ -45,7 +45,7 @@ public sealed class DownloadJob : Job
     {
         _ = ctbHome; // 下载不碰 CTB。
 
-        var progress = new Progress<(int Done, int Total, string Current, long Bytes)>(p =>
+        var progress = new InlineProgress<(int Done, int Total, string Current, long Bytes)>(p =>
         {
             var fraction = p.Total == 0 ? 0 : (double)p.Done / p.Total;
             onProgress(Math.Clamp(fraction, 0, 1));

@@ -21,4 +21,4 @@
 [PASS] 配置保存失败可见且回滚内存
 [PASS] 暂停取消立即退出
 [PASS] 服务端不回响应时有限重试后明确超时
-证据目录：D:\Map\cutmap\_gate\acceptance\3c5887b872044cc48cdae3899c57c07b
+证据目录：D:\Map\cutmap\_gate\acceptance\dd96b975990f4a37a23a78f75f6f449e

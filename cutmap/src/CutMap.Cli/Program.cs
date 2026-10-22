@@ -145,6 +145,8 @@ internal static class Program
 
             回归闸门（改了瓦片网格或 GDAL 版本之后跑）
               acceptance-gate        验收缺陷回归：缺幅、源持久化、HTTP 续传、打包取消
+              coordinate-gate        投影、旋转、覆盖判断、元数据与产物关联
+              boundary-persistence-gate 外部边界持久化、来源及重庆区县完整性
               grid-gate              瓦片网格算术对基线（15 层 223,495）
               warp-gate              30 幅拼接，对基线校验和（期望 58775）
               ctb-gate               ctb-tile 子进程、实时进度、取消、退出码陷阱

@@ -1,0 +1,12 @@
+[2026-10-22T10:06:34.3229113+08:00] gdalwarp -t_srs EPSG:4326 -te 105.3 28.1 110.2 32.2 -te_srs EPSG:4326 -r bilinear -co TILED=YES -co COMPRESS=LZW -overwrite --config GDAL_CACHEMAX 2048 "D:\Map\data\inputs\dem\N28_E105.tif" "D:\Map\data\inputs\dem\N28_E106.tif" "D:\Map\data\inputs\dem\N28_E107.tif" "D:\Map\data\inputs\dem\N28_E108.tif" "D:\Map\data\inputs\dem\N28_E109.tif" "D:\Map\data\inputs\dem\N28_E110.tif" "D:\Map\data\inputs\dem\N29_E105.tif" "D:\Map\data\inputs\dem\N29_E106.tif" "D:\Map\data\inputs\dem\N29_E107.tif" "D:\Map\data\inputs\dem\N29_E108.tif" "D:\Map\data\inputs\dem\N29_E109.tif" "D:\Map\data\inputs\dem\N29_E110.tif" "D:\Map\data\inputs\dem\N30_E105.tif" "D:\Map\data\inputs\dem\N30_E106.tif" "D:\Map\data\inputs\dem\N30_E107.tif" "D:\Map\data\inputs\dem\N30_E108.tif" "D:\Map\data\inputs\dem\N30_E109.tif" "D:\Map\data\inputs\dem\N30_E110.tif" "D:\Map\data\inputs\dem\N31_E105.tif" "D:\Map\data\inputs\dem\N31_E106.tif" "D:\Map\data\inputs\dem\N31_E107.tif" "D:\Map\data\inputs\dem\N31_E108.tif" "D:\Map\data\inputs\dem\N31_E109.tif" "D:\Map\data\inputs\dem\N31_E110.tif" "D:\Map\data\inputs\dem\N32_E105.tif" "D:\Map\data\inputs\dem\N32_E106.tif" "D:\Map\data\inputs\dem\N32_E107.tif" "D:\Map\data\inputs\dem\N32_E108.tif" "D:\Map\data\inputs\dem\N32_E109.tif" "D:\Map\data\inputs\dem\N32_E110.tif" "D:\Map\cutmap\_gate\approved-e2e\gui\dem_clipped.tif"
+[2026-10-22T10:07:05.7920520+08:00] 算法元数据：D:\Map\cutmap\_gate\approved-e2e\gui\dem_clipped.json
+[2026-10-22T10:07:08.4746633+08:00] 拼接裁剪：34.153 s；17640×14760，17640×14760，EPSG:4326，原像元 0.000277778×0.000277778（CRS 单位），切片参考 1.000″，GDT_Float32，nodata=无，已写元数据 json
+[2026-10-22T10:19:55.8645181+08:00] 切片：767.390 s；223,495 个瓦片，最深 14 级，用时 748 s
+[2026-10-22T10:19:57.2310980+08:00] layer.json：0–14 级，bounds [105.2930, 28.0920, 110.2039, 32.2009]
+[2026-10-22T10:20:03.3025591+08:00] 瓦片：0–14 级，共 223,495 个
+[2026-10-22T10:20:03.3146194+08:00] 已写 D:\Map\cutmap\_gate\approved-e2e\gui\cesium_terrain\layer.json
+[2026-10-22T10:20:03.3218334+08:00] 已写 D:\Map\cutmap\_gate\approved-e2e\gui\cesium_terrain\README.txt
+[2026-10-22T10:20:09.4462103+08:00] 已重新实测算法元数据：D:\Map\cutmap\_gate\approved-e2e\gui\dem_clipped.json
+[2026-10-22T10:20:09.4469229+08:00] 打包：13.582 s；前端瓦片 223,495 个，算法数据
+[2026-10-22T10:20:14.5688338+08:00] PASS 15 层瓦片数量对拍：223495
+[2026-10-22T10:20:19.9545487+08:00] PASS 抽样内容对拍：225，不同 0

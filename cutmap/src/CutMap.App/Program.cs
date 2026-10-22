@@ -13,6 +13,14 @@ internal static class Program
     [STAThread]
     private static void Main(string[] args)
     {
+        if (args.Length > 2 && args[0] == "--slice-benchmark")
+        {
+            Environment.Exit(Jobs.EndToEndGate.Benchmark(args[1], args[2]));
+        }
+        if (args.Length > 1 && args[0] == "--e2e-gate")
+        {
+            Environment.Exit(Jobs.EndToEndGate.Run(args[1]));
+        }
         if (args.Length > 1 && args[0] == "--workflow-gate")
         {
             ApplicationConfiguration.Initialize();

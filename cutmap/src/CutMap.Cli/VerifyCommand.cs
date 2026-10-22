@@ -19,15 +19,6 @@ namespace CutMap.Cli;
 /// </summary>
 internal static class VerifyCommand
 {
-    /// <summary>一对经纬度，用来抽查高程。</summary>
-    private static readonly (string Name, double Lon, double Lat)[] SamplePoints =
-    [
-        ("中部偏西", 107.75, 30.15),
-        ("西北部", 106.25, 31.65),
-        ("东北部", 109.45, 31.25),
-        ("西南部", 105.55, 28.35),
-    ];
-
     public static int Run(string tilesDirectory, string? sourceDem)
     {
         if (!Directory.Exists(tilesDirectory))
@@ -148,7 +139,11 @@ internal static class VerifyCommand
             Console.WriteLine($"  源：{info.Summary()}");
 
             var worst = 0.0;
-            foreach (var (name, lon, lat) in SamplePoints)
+            var valid = 0;
+            var deltas = new List<double>();
+            var samples = from x in Enumerable.Range(1, 5) from y in Enumerable.Range(1, 5)
+                select ($"采样{x}-{y}", info.Extent.West + info.Extent.Width * x / 6, info.Extent.South + info.Extent.Height * y / 6);
+            foreach (var (name, lon, lat) in samples)
             {
                 var decoded = SampleTileHeight(tilesDirectory, declaredMaxZoom, lon, lat);
                 if (decoded is null)
@@ -163,27 +158,21 @@ internal static class VerifyCommand
                     continue;
                 }
                 var delta = decoded.Value - source.Value;
+                valid++;
+                deltas.Add(Math.Abs(delta));
                 worst = Math.Max(worst, Math.Abs(delta));
-                Console.WriteLine($"  [OK] {name} ({lon}E {lat}N)：瓦片 {decoded:F1} m / " +
+                Console.WriteLine($"  [{(Math.Abs(delta) <= 1 ? "OK" : "!!")}] {name} ({lon}E {lat}N)：瓦片 {decoded:F1} m / " +
                                   $"源 {source:F1} m / 差 {delta:+0.0;-0.0;0.0} m");
             }
 
-            // 阈值 50 m 是怎么来的：
-            //
-            // 瓦片是 30 m 源网格重采样到 65×65 的产物，而这里比的是**单个格子对单个像元**。
-            // 两者中心最多差半个像元，在陡峭处（如三峡一带）十几米水平偏移就足以造成
-            // 二三十米垂直差——那是重采样本身的噪声，不是数据错。README §8.2 用同样
-            // 思路实测记录的是 −4.6 ~ +12.4 m，换成更陡的点就会更大。
-            //
-            // 这道检查要抓的是**粗错**：取错瓦片、TMS 方向反了、heightmap 解码错位。
-            // 那些错误的量级是几百到几千米——z14 上错一块瓦片就是约 1.2 km。
-            // 50 m 既容得下重采样噪声，又远小于任何一类真实故障。
-            ok &= Check("最大高差在重采样噪声量级内（< 50 m）", worst < 50.0, true,
-                        $"实测最大 {worst:F1} m（z14 错一块瓦片约 1200 m）");
+            ok &= Check("至少有一个有效高程样本", valid > 0);
+            ok &= Check("同坐标米级高度要求（最大误差 ≤ 1 m）", valid > 0 && worst <= 1.0, true,
+                $"有效样本 {valid}，最大误差 {worst:F3} m，平均误差 {(deltas.Count > 0 ? deltas.Average() : double.NaN):F3} m");
+
         }
 
         Console.WriteLine();
-        Console.WriteLine(ok ? "PASS  verify：这份瓦片集可以被 Cesium 加载" : "FAIL  verify");
+        Console.WriteLine(ok ? "PASS  verify：瓦片格式与米级高度检查通过" : "FAIL  verify");
         return ok ? 0 : 1;
     }
 
@@ -213,7 +202,7 @@ internal static class VerifyCommand
         return null;
     }
 
-    /// <summary>点所在的瓦片里，覆盖该点的那一个像素的高程。取不到返回 null。</summary>
+    /// <summary>按同一坐标双线性插值瓦片网格高程，取不到返回 null。</summary>
     private static double? SampleTileHeight(string tilesDirectory, int zoom, double lon, double lat)
     {
         var (x, y) = CtbGrid.TileIndex(lon, lat, zoom);
@@ -233,12 +222,17 @@ internal static class VerifyCommand
         var west = -180.0 + x * lonSpan;
         var south = -90.0 + y * latSpan;
 
-        var col = (int)Math.Floor((lon - west) / lonSpan * 64.0);
-        var row = (int)Math.Floor((south + latSpan - lat) / latSpan * 64.0);
-        col = Math.Clamp(col, 0, 64);
-        row = Math.Clamp(row, 0, 64);
+        var column = Math.Clamp((lon - west) / lonSpan * 64, 0, 64);
+        var rowValue = Math.Clamp((south + latSpan - lat) / latSpan * 64, 0, 64);
+        var col = Math.Min(63, (int)Math.Floor(column));
+        var row = Math.Min(63, (int)Math.Floor(rowValue));
+        var dx = column - col;
+        var dy = rowValue - row;
+        return DecodeHeight(payload, row, col) * (1 - dx) * (1 - dy)
+            + DecodeHeight(payload, row, col + 1) * dx * (1 - dy)
+            + DecodeHeight(payload, row + 1, col) * (1 - dx) * dy
+            + DecodeHeight(payload, row + 1, col + 1) * dx * dy;
 
-        return DecodeHeight(payload, row, col);
     }
 
     /// <summary>
@@ -253,12 +247,7 @@ internal static class VerifyCommand
     }
 
     /// <summary>
-    /// 从源 DEM 取某点的高程。用绑定的 RasterIO 单像素读，不起子进程。
-    ///
-    /// **取最近像元而不是 floor。** 这与 README §8.2 记录参考值用的
-    /// <c>gdallocationinfo -geoloc</c> 行为一致。用 floor 会引入最多半个像元的
-    /// 位置偏差，而源是 30 m 网格——在陡峭处半个像元（约 15 m 水平）足以造成
-    /// 二十几米的垂直差，那是我自己的取法带来的，不是数据的问题。
+    /// 从源 DEM 的像元中心网格，在与瓦片相同的坐标双线性取样。
     /// </summary>
     private static double? SampleDemHeight(RasterInfo info, double lon, double lat)
     {
@@ -267,14 +256,21 @@ internal static class VerifyCommand
         using var band = dataset?.GetRasterBand(1);
         if (band is null) return null;
 
+        if (info.NeedsNormalization) throw new InvalidOperationException("高度对拍请使用实际切片的 WGS84 北向 DEM。");
         var gt = info.GeoTransform;
-        var col = (int)Math.Round((lon - gt[0]) / gt[1] - 0.5, MidpointRounding.AwayFromZero);
-        var row = (int)Math.Round((lat - gt[3]) / gt[5] - 0.5, MidpointRounding.AwayFromZero);
-        if (col < 0 || row < 0 || col >= info.Width || row >= info.Height) return null;
+        var px = (lon - gt[0]) / gt[1] - 0.5;
+        var py = (lat - gt[3]) / gt[5] - 0.5;
+        var col = (int)Math.Floor(px);
+        var row = (int)Math.Floor(py);
+        if (col < 0 || row < 0 || col + 1 >= info.Width || row + 1 >= info.Height) return null;
+        var values = new float[4];
+        band.ReadRaster(col, row, 2, 2, values, 2, 2, 0, 0);
+        if (values.Any(v => !float.IsFinite(v) || (info.NoData is { } nd && v == nd))) return null;
+        var dx = px - col;
+        var dy = py - row;
+        return values[0] * (1 - dx) * (1 - dy) + values[1] * dx * (1 - dy)
+            + values[2] * (1 - dx) * dy + values[3] * dx * dy;
 
-        var buffer = new float[1];
-        band.ReadRaster(col, row, 1, 1, buffer, 1, 1, 0, 0);
-        return buffer[0];
     }
 
     private static bool Check(string label, string actual, string expected)

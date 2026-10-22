@@ -141,6 +141,7 @@ class Server(http.server.ThreadingHTTPServer):
     # Threaded: the globe fires dozens of tile requests in parallel and a
     # single-threaded server serialises them behind one another.
     daemon_threads = True
+    request_queue_size = 128
     allow_reuse_address = True
 
 

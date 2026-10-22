@@ -1,0 +1,34 @@
+### Result
+{"samples":[{"name":"主城","lon":106.55,"lat":29.56,"height":245.84693333341056,"elapsedMs":19.59999999962747},{"name":"万州","lon":108.4,"lat":30.81,"height":211.81777777789875,"elapsedMs":26.09999999962747},{"name":"黔江","lon":108.77,"lat":29.53,"height":583.3632000000125,"elapsedMs":23.09999999962747}],"localResources":170}
+### Ran Playwright code
+```js
+await (async (page) => {
+  const observations = [];
+  const points = [['主城',106.55,29.56],['万州',108.4,30.81],['黔江',108.77,29.53]];
+  for (const [name,lon,lat] of points) {
+    const result = await page.evaluate(async ([name,lon,lat]) => {
+      const viewer = window.viewer;
+      const start = performance.now();
+      viewer.camera.setView({destination: Cesium.Cartesian3.fromDegrees(lon,lat,7000), orientation: { heading: 0, pitch: -Math.PI / 4, roll: 0 }});
+      viewer.scene.globe.enableLighting = true;
+      viewer.scene.globe.showGroundAtmosphere = false;
+      viewer.scene.light = new Cesium.DirectionalLight({direction: new Cesium.Cartesian3(-1, -1, -1)});
+      viewer.scene.requestRender();
+      const sampled = await Cesium.sampleTerrain(viewer.terrainProvider,14,[Cesium.Cartographic.fromDegrees(lon,lat)]);
+      return {name,lon,lat,height:sampled[0].height,elapsedMs:performance.now()-start};
+    }, [name,lon,lat]);
+    observations.push(result);
+    await page.waitForTimeout(2000);
+    await page.waitForFunction(() => window.viewer.scene.globe.tilesLoaded, { timeout: 60000 });
+    await page.screenshot({path:`output/playwright/terrain-${name}.png`});
+  }
+  return { samples:observations,localResources:await page.evaluate(()=>performance.getEntriesByType('resource').filter(r=>r.name.includes('.terrain')).length) };
+}
+)(page);
+```
+### Page
+- Page URL: http://127.0.0.1:8765/terrain_viewer.html?tiles=./__tileset__/
+- Page Title: 地形瓦片预览
+- Console: 1 errors, 0 warnings
+### Events
+- New console entries: .playwright-cli\console-2026-10-22T04-45-40-140Z.log#L1-L5

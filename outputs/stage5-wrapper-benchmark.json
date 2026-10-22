@@ -1,0 +1,31 @@
+{
+  "input": "D:\\Map\\work\\approved-remediation\\ctb-probe\\1-1\\dem.tif",
+  "observations": [
+    {
+      "round": 0,
+      "nativeSeconds": 1.1670969,
+      "guiSeconds": 2.7117899,
+      "ratio": 2.3235344897240324,
+      "sameCounts": true,
+      "passed": true
+    },
+    {
+      "round": 1,
+      "nativeSeconds": 0.5160285,
+      "guiSeconds": 0.7238944,
+      "ratio": 1.402818642768762,
+      "sameCounts": true,
+      "passed": true
+    },
+    {
+      "round": 2,
+      "nativeSeconds": 0.5233641,
+      "guiSeconds": 0.7177043,
+      "ratio": 1.3713288702836133,
+      "sameCounts": true,
+      "passed": true
+    }
+  ],
+  "passed": true,
+  "note": "Small ROI, three fresh directories; comparison covers task execution, not manual UI interaction or full-region speed."
+}

@@ -12,4 +12,4 @@
 [PASS] NaN nodata 可以写入 JSON
 [PASS] 只前端可分发绑定边界
 [PASS] 矩形重跑不带旧边界
-证据目录：D:\Map\cutmap\_gate\coordinates\f10c790008714fa2b8ef32b3724f495f
+证据目录：D:\Map\cutmap\_gate\coordinates\6cf860d6f544435992ed2e7f794796ab

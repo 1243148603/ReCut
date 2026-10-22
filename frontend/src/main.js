@@ -72,6 +72,7 @@ import { elements, setStatus, say, setMeta, installPicking } from './hud.js';
   const basemapSelect = el('basemap');
   // ?basemap=ion|local|none|osm（与仓库根的预览页对齐；自动化验收常用 local）
   const basemapParam = params.get('basemap');
+  if (!basemapParam) basemapSelect.value = 'local';
   if (basemapParam && [...basemapSelect.options].some((o) => o.value === basemapParam)) {
     basemapSelect.value = basemapParam;
   }

@@ -1,0 +1,12 @@
+  正在确定要还原的项目…
+  所有项目均是最新的，无法还原。
+  CutMap.Core -> D:\Map\cutmap\src\CutMap.Core\bin\Release\net8.0\CutMap.Core.dll
+  CutMap.Setup -> D:\Map\cutmap\src\CutMap.Setup\bin\Release\net8.0-windows\win-x64\CutMap-Setup.dll
+  CutMap.Cli -> D:\Map\cutmap\src\CutMap.Cli\bin\Release\net8.0\win-x64\CutMap.Cli.dll
+  CutMap.App -> D:\Map\cutmap\src\CutMap.App\bin\Release\net8.0-windows\win-x64\CutMap.App.dll
+
+已成功生成。
+    0 个警告
+    0 个错误
+
+已用时间 00:00:05.93

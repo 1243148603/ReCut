@@ -509,8 +509,8 @@ function flyHome() {
     return;
   }
 
-  // 有 Ion 令牌就默认用 Bing 影像（真实底图）；没有则退回本地离线影像。
-  const basemapKind = (params.get('basemap') ?? (ION_READY ? 'ion' : 'local')).toLowerCase();
+  // 默认本地离线底图，在线影像只在用户显式选择时加载。
+  const basemapKind = (params.get('basemap') ?? 'local').toLowerCase();
   const select = document.getElementById('basemap');
   // 没有令牌时把 Ion 那一项标灰，别让用户选了才发现不能用。
   const ionOption = select.querySelector('option[value="ion"]');

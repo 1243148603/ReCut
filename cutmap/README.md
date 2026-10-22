@@ -8,9 +8,8 @@
 外部边界转换为 WGS84 后存入 `%APPDATA%\CutMap\boundaries`，可跨重启供历史回填。
 
 发布更新：0.1.1 修复 DEM 缺幅检查、下载完整性和源状态持久化、取消打包时旧 zip 丢失。
-安装器采用先解压校验后替换；升级前目录保留为同级 `CutMap.previous-*`，以便回退和找回误放在安装目录中的数据。
-卸载前请移走安装目录内的 DEM/瓦片；用户配置和同级升级备份不会由卸载器删除。
-安装包可用 `--verify` 检查完整载荷，`--self-test` 运行隔离的安装事务回归，两者均不改真实安装、快捷方式或注册表。
+0.1.1 旧自定义安装器采用先解压校验后替换，升级前目录保留为同级 `CutMap.previous-*`；仅旧安装器支持 `--verify` / `--self-test`。
+0.1.2 Inno 安装器升级覆盖受管理程序文件，卸载保留未由安装器创建的用户文件和用户配置。隔离验证可用 `pack-inno.ps1 -TestBuild` 与 `test-inno.ps1`。
 发布包内 `build-info.json` 记录版本、源码提交和关键文件校验值。
 
 把 Copernicus GLO-30 DEM 变成两套产物的 Windows 桌面工具：
@@ -241,3 +240,8 @@ CutMap.Cli verify <dir> # 校验已有瓦片集能否被 Cesium 加载
 - **Copernicus DEM GLO-30**：分发产物时须注明出处
   （`Contains modified Copernicus DEM GLO-30 data, © ESA / European Commission`）
 - **行政区划数据**：来源为天地图时，随产物分发须注明数据来源
+# 0.1.2 本轮验收状态
+
+本版已修复坐标与覆盖判断、产物关联、日志与持久化、向导及安装升级卸载问题。边界数据按用户批准采用 DataV，版本及校验值见 `resources/boundary-manifest.json`。
+
+总体验收仍未通过：重庆 30 幅切片实测约 12.8 分钟；25 点高程抽检最大偏差 6.710 米，未满足 1 米要求。原生 CTB 与 GUI 任务产物抽样一致并不能证明高度精度达标。试验引擎未放入正式包；完整证据及后续方案见仓库 `outputs/整改执行记录.md`。干净 Win10/Win11 虚拟机安装尚待验证。

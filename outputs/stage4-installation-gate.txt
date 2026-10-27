@@ -1,4 +1,4 @@
-﻿PASS Initial installation exits successfully
+PASS Initial installation exits successfully
 PASS Application and bundled runtime exist
 PASS Bundled CTB exists
 PASS Correct version registered in isolated HKCU key
@@ -11,4 +11,4 @@ PASS Rejected install preserves foreign file
 PASS Uninstall exits successfully
 PASS Uninstall removes application and registry entry
 PASS Uninstall preserves files not installed by CutMap
-Evidence directory: D:\Map\cutmap\_gate\inno-validation-c4381a35da14446da95ff0ac71d0b975
+Evidence directory: D:\Map\cutmap\_gate\inno-validation-60af8b65d2ec49f7ab8a5a3e7d96cfa1

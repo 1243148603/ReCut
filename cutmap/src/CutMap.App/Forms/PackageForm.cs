@@ -62,7 +62,7 @@ public sealed class PackageForm : ThemedForm
         // **高度按内容兜底。** 写死 460 时最后那行按钮会探出窗体底边
         // （自检实测 666×466 > 680×460），按钮下缘被切掉一截。
         // 用根面板的首选高度定，内容以后再增减也不用回来改这个数字。
-        FormLayout.FitToContent(this, new Size(680, Math.Max(460, root.PreferredSize.Height)));
+        FormLayout.FitToContent(this, new Size(680, Math.Max(460, root.PreferredSize.Height + 8)));
 
         // **校验要跟着输入走。** 原来只在勾选框变化时算一次，于是两种最常见的操作
         // 都会卡死：先勾选（路径还空着）再填路径、或者开着窗口等后台切片任务把
@@ -122,7 +122,7 @@ public sealed class PackageForm : ThemedForm
         layer.AddRow(PathRow("description：", _layerDescription, null));
         layer.AddRow(PathRow("bounds：", _layerBounds, null));
         layer.AddRow(PathRow("maxzoom：", _layerZoom, null));
-        layer.AddRow(PathRow("边界 GeoJSON：", _boundaryPath, () =>
+        layer.AddRow(PathRow("边界文件：", _boundaryPath, () =>
         {
             using var picker = new OpenFileDialog { Filter = "GeoJSON|*.geojson;*.json" };
             if (picker.ShowDialog(this) == DialogResult.OK) _boundaryPath.Text = picker.FileName;

@@ -41,6 +41,15 @@ public sealed record PipelinePlan(
             if (CtbGrid.ValidateCost(estimate) is { } rejection) throw new ArgumentException(rejection);
         }
         var chain = Guid.NewGuid().ToString("N");
+        // 完整流程知道瓦片实际来自哪一份 DEM，layer bounds 应沿用该数据范围。
+        // 只有“独立打包已有瓦片”缺少 DEM 时，才退回按瓦片包络反推。
+        BBox? productBounds = LayerBounds;
+        if (productBounds is null && Slice)
+        {
+            productBounds = Mosaic
+                ? (Boundaries is { Count: > 0 } ? BoundaryExport.UnionBounds(Boundaries) : Target)
+                : (RasterSummaries?.FirstOrDefault() ?? RasterInfo.Read(Inputs.Single())).Extent;
+        }
         var jobs = new List<Job>();
         if (Mosaic) jobs.Add(new MosaicJob { InputPaths = Inputs, OutputPath = Tif, Target = Target,
             Boundaries = Boundaries, Resampling = Resampling, WriteMetadata = WantAlgo, ChainId = chain });
@@ -49,7 +58,7 @@ public sealed record PipelinePlan(
             TilesDirectory = WantTiles && Package ? Tiles : null, AlgoTifPath = WantAlgo ? Tif : null,
             ZipTiles = Package && WantTiles && ZipTiles, ZipAlgo = Package && WantAlgo && ZipAlgo,
             LayerName = LayerName, LayerDescription = LayerDescription, LayerVersion = LayerVersion,
-            LayerBounds = LayerBounds, LayerMaxZoom = LayerMaxZoom, ChainId = chain });
+            LayerBounds = productBounds, LayerMaxZoom = LayerMaxZoom, ChainId = chain });
         return jobs;
     }
 }

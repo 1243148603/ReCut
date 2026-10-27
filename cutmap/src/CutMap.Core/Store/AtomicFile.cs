@@ -10,7 +10,20 @@ public static class AtomicFile
         try
         {
             File.WriteAllText(temporary, text, new System.Text.UTF8Encoding(false));
-            File.Move(temporary, path, overwrite: true);
+            // Windows 的索引器/杀毒软件可能在文件刚写完时短暂占用目标文件。
+            // 保持同一个临时文件并有限重试，避免一次瞬时共享冲突让配置操作失败。
+            for (var attempt = 0; ; attempt++)
+            {
+                try
+                {
+                    File.Move(temporary, path, overwrite: true);
+                    break;
+                }
+                catch (Exception ex) when (attempt < 4 && ex is IOException or UnauthorizedAccessException)
+                {
+                    Thread.Sleep(50 * (attempt + 1));
+                }
+            }
         }
         finally { if (File.Exists(temporary)) File.Delete(temporary); }
     }

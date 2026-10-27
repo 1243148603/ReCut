@@ -16,4 +16,15 @@
 [PASS] 取消打包及时返回
 [PASS] 取消打包保留旧 zip
 [PASS] 取消打包清理临时文件
-证据目录：D:\Map\cutmap\_gate\acceptance\7e42cd64d3854af7b433a2d3b3f48de8
+[PASS] 并发日志先写磁盘，20000 条完整保留
+[PASS] 历史重载后仍可定位独立任务日志
+[PASS] 历史单条删除重启后生效
+[PASS] 历史清空重启后生效
+[PASS] 自定义任务预设增改后重启保留
+[PASS] 自定义范围预设重启保留
+[PASS] 内置预设不能删除
+[PASS] 自定义预设删除后重启消失
+[PASS] 配置保存失败可见且回滚内存
+[PASS] 暂停取消立即退出
+[PASS] 服务端不回响应时有限重试后明确超时
+证据目录：D:\Map\cutmap\_gate\acceptance\10cad5d9da49453dbb401ed3acdb1573

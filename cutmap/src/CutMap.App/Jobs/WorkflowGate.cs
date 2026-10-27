@@ -28,6 +28,9 @@ internal static class WorkflowGate
         Check("全流程生成三步", full.CreateJobs().Count == 3);
         Execute(full.CreateJobs());
         Check("全流程双产物", File.Exists(Path.Combine(full.Tiles, "layer.json")) && File.Exists(Path.ChangeExtension(full.Tif, ".json")));
+        using var fullLayer = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(full.Tiles, "layer.json")));
+        var fullBounds = fullLayer.RootElement.GetProperty("bounds").EnumerateArray().Select(x => x.GetDouble()).ToArray();
+        Check("全流程 layer bounds 使用真实 DEM 范围", BoundsMatch(fullBounds, info.Extent));
         var algo = full with { Root = Path.Combine(root, "algo"), Slice = false, Package = false, WantTiles = false };
         Check("只算法不启动切片", algo.CreateJobs().All(j => j is not SliceJob));
         Execute(algo.CreateJobs());
@@ -35,6 +38,9 @@ internal static class WorkflowGate
         var front = full with { Root = Path.Combine(root, "front"), WantAlgo = false };
         Execute(front.CreateJobs());
         Check("只前端不生成算法 JSON", !File.Exists(Path.ChangeExtension(front.Tif, ".json")) && File.Exists(Path.Combine(front.Tiles, "layer.json")));
+        using var frontLayer = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(front.Tiles, "layer.json")));
+        var frontBounds = frontLayer.RootElement.GetProperty("bounds").EnumerateArray().Select(x => x.GetDouble()).ToArray();
+        Check("只前端 layer bounds 使用真实 DEM 范围", BoundsMatch(frontBounds, info.Extent));
         var slice = full with { Root = Path.Combine(root, "slice"), Mosaic = false, Package = false, WantAlgo = false };
         Check("只切片跳过其他步骤", slice.CreateJobs() is [SliceJob]);
         Execute(slice.CreateJobs());
@@ -61,4 +67,8 @@ internal static class WorkflowGate
         foreach (var line in log) Console.WriteLine(line);
         return failures == 0 ? 0 : 1;
     }
+
+    private static bool BoundsMatch(IReadOnlyList<double> actual, BBox expected) =>
+        actual.Count == 4 && actual.Zip(new[] { expected.West, expected.South, expected.East, expected.North })
+            .All(pair => Math.Abs(pair.First - pair.Second) < 1e-10);
 }

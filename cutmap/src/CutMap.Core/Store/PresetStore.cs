@@ -31,6 +31,7 @@ public sealed class PresetStore
 {
     private readonly List<ClipPreset> _clip = [];
     private readonly List<TaskPreset> _tasks = [];
+    private readonly string _filePath;
 
     private static readonly JsonSerializerOptions WriteOptions = new()
     {
@@ -67,8 +68,9 @@ public sealed class PresetStore
         IsBuiltIn = true,
     };
 
-    public PresetStore()
+    public PresetStore(string? filePath = null)
     {
+        _filePath = filePath ?? AppPaths.UserPresetsFile;
         _clip.Add(Chongqing);
         _tasks.Add(ChongqingTask);
         Load();
@@ -134,8 +136,8 @@ public sealed class PresetStore
     {
         try
         {
-            if (!File.Exists(AppPaths.UserPresetsFile)) return;
-            var loaded = JsonSerializer.Deserialize<Persisted>(File.ReadAllText(AppPaths.UserPresetsFile));
+            if (!File.Exists(_filePath)) return;
+            var loaded = JsonSerializer.Deserialize<Persisted>(File.ReadAllText(_filePath));
             if (loaded is null) return;
 
             foreach (var clip in loaded.Clip ?? [])
@@ -156,7 +158,7 @@ public sealed class PresetStore
                 Clip = [.. _clip.Where(p => !p.IsBuiltIn)],
                 Task = [.. _tasks.Where(p => !p.IsBuiltIn)],
             };
-            AtomicFile.Write(AppPaths.UserPresetsFile, JsonSerializer.Serialize(payload, WriteOptions));
+            AtomicFile.Write(_filePath, JsonSerializer.Serialize(payload, WriteOptions));
     }
 
     private sealed record Persisted

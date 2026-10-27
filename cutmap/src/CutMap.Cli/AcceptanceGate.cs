@@ -101,6 +101,40 @@ internal static class AcceptanceGate
         new HistoryStore(historyPath).Add(new HistoryEntry { Id = "log-test", Type = "测试", StartedAt = DateTimeOffset.Now,
             Status = "成功", LogPath = taskPath });
         Check("历史重载后仍可定位独立任务日志", new HistoryStore(historyPath).All[0].LogPath == taskPath);
+        var history = new HistoryStore(historyPath);
+        history.Add(new HistoryEntry { Id = "delete-test", Type = "测试", StartedAt = DateTimeOffset.Now,
+            Status = "失败", ParametersJson = "{\"max_zoom\":14}" });
+        Check("历史单条删除重启后生效", history.Delete("delete-test") &&
+            new HistoryStore(historyPath).All.All(e => e.Id != "delete-test"));
+        history.Clear();
+        Check("历史清空重启后生效", new HistoryStore(historyPath).All.Count == 0);
+
+        var presetPath = Path.Combine(work, "presets.json");
+        var presets = new PresetStore(presetPath);
+        var taskPreset = PresetStore.ChongqingTask with
+        {
+            Id = "acceptance-task", Name = "验收任务", Description = "首次保存", IsBuiltIn = false,
+            MaxZoom = 12, ZipTiles = true,
+        };
+        presets.SaveTask(taskPreset);
+        presets.SaveTask(taskPreset with { Description = "修改后", MaxZoom = 14 });
+        var clipPreset = new ClipPreset
+        {
+            Id = "acceptance-clip", Name = "验收范围", Description = "持久化范围",
+            Bounds = [106, 29, 107, 30], IsBuiltIn = false,
+        };
+        presets.SaveClip(clipPreset);
+        var reloadedPresets = new PresetStore(presetPath);
+        Check("自定义任务预设增改后重启保留", reloadedPresets.TaskById(taskPreset.Id) is
+            { Description: "修改后", MaxZoom: 14, ZipTiles: true });
+        Check("自定义范围预设重启保留", reloadedPresets.ClipPresets.Any(p =>
+            p.Id == clipPreset.Id && p.Bounds.SequenceEqual(clipPreset.Bounds)));
+        Check("内置预设不能删除", !reloadedPresets.DeleteTask(PresetStore.ChongqingTask.Id) &&
+            !reloadedPresets.DeleteClip(PresetStore.Chongqing.Id));
+        Check("自定义预设删除后重启消失", reloadedPresets.DeleteTask(taskPreset.Id) &&
+            reloadedPresets.DeleteClip(clipPreset.Id) &&
+            new PresetStore(presetPath).TaskById(taskPreset.Id) is null &&
+            new PresetStore(presetPath).ClipPresets.All(p => p.Id != clipPreset.Id));
         var blocked = Path.Combine(work, "blocked.json");
         Directory.CreateDirectory(blocked);
         var failedStore = new SourceStore(blocked);

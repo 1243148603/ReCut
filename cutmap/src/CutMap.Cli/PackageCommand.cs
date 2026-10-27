@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
+using CutMap.Core.Geo;
 using CutMap.Core.Packaging;
 using CutMap.Core.Terrain;
 
@@ -36,6 +37,14 @@ internal static class PackageCommand
         // FR-15：矢量裁剪在 tif 旁写的同名 *.boundary.geojson 随瓦片一起分发。
         var boundary = tif is null ? null : Path.ChangeExtension(tif, ".boundary.geojson");
         if (boundary is not null && !File.Exists(boundary)) boundary = null;
+        var coverage = LayerJson.InspectTiles(tilesDir);
+        LayerJson? outputLayer = null;
+        if (coverage is not null && tif is not null)
+        {
+            var bounds = RasterInfo.Read(tif).Extent;
+            outputLayer = LayerJson.Create(Path.GetFileName(tilesDir.TrimEnd(Path.DirectorySeparatorChar)),
+                "Cesium terrain tiles", "1.0.0", bounds, coverage.MinZoom, coverage.DeepestZoom);
+        }
         var sw = Stopwatch.StartNew();
         var result = Packager.Run(
             new PackageRequest(
@@ -43,6 +52,7 @@ internal static class PackageCommand
                 TilesDirectory: tilesDir,
                 AlgoTifPath: tif,
                 ZipTiles: zip, ZipAlgo: false,
+                Layer: outputLayer, Coverage: coverage,
                 BoundaryGeoJsonPath: boundary),
             onLog: line => Console.WriteLine("  " + line));
         sw.Stop();

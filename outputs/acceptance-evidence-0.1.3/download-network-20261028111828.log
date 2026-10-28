@@ -1,0 +1,23 @@
+一、区域 → 分幅枚举（1°×1° 网格，按真实相交）
+  [105.3, 28.1, 110.2, 32.2] → 30 幅
+  首：N28_E105  末：N32_E110
+  [OK] 重庆全域应为 30 幅: 30
+  [OK] N29_E107 在枚举里: 是
+  [OK] N29_E108 在枚举里: 是
+  [OK] 整度范围只出 1 幅: 1
+  [OK] 且是 N28_E105: N28_E105
+
+二、URL 模板展开（FR-16 的占位符口径）
+  模板：https://copernicus-dem-30m.s3.amazonaws.com/Copernicus_DSM_COG_10_{lat}_00_{lon}_00_DEM/Copernicus_DSM_COG_10_{lat}_00_{lon}_00_DEM.tif
+  展开：https://copernicus-dem-30m.s3.amazonaws.com/Copernicus_DSM_COG_10_N29_00_E106_00_DEM/Copernicus_DSM_COG_10_N29_00_E106_00_DEM.tif
+  [OK] 与教程 §3.1 的 URL 逐字符相同: 相同
+  负向：把教程的 N{lat} 写法粘进模板 → https://example.invalid/NN29_00_EE106_00.tif
+  [OK] 能看出拼错了（含 NN29）: 是
+  [OK] 无占位符的模板被拒: 是
+
+三、整批并发（离线：每个请求延迟 600 ms 的本地源）
+  4 幅用时 1.6 s（串行下界约 4.8 s），源端并发峰值 4
+  [OK] 全部下载成功: 是
+  [OK] 并发峰值 ≥ 3（实测 4）: 是
+
+四、实际下载（只取 1 幅，约 45 MB）

@@ -1,31 +1,28 @@
 {
-  "input": "D:\\Map\\work\\approved-remediation\\ctb-probe\\1-1\\dem.tif",
+  "input": "D:\\Map\\cutmap\\_gate\\approved-e2e\\dem.tif",
   "observations": [
     {
       "round": 0,
-      "nativeSeconds": 1.1670969,
-      "guiSeconds": 2.7117899,
-      "ratio": 2.3235344897240324,
+      "nativeSeconds": 518.6214288,
+      "guiSeconds": 592.3792177,
+      "overheadRate": 0.1422189381388709,
       "sameCounts": true,
       "passed": true
     },
     {
       "round": 1,
-      "nativeSeconds": 0.5160285,
-      "guiSeconds": 0.7238944,
-      "ratio": 1.402818642768762,
-      "sameCounts": true,
-      "passed": true
-    },
-    {
-      "round": 2,
-      "nativeSeconds": 0.5233641,
-      "guiSeconds": 0.7177043,
-      "ratio": 1.3713288702836133,
+      "nativeSeconds": 613.5662156,
+      "guiSeconds": 577.524813,
+      "overheadRate": -0.05874085254963959,
       "sameCounts": true,
       "passed": true
     }
   ],
+  "nativeMedian": 613.5662156,
+  "wrapperMedian": 592.3792177,
+  "overheadRate": -0.034530906952367636,
+  "target": "\u5305\u88C5\u5C42\u4E2D\u4F4D\u6570\u989D\u5916\u5F00\u9500 \u2264 10%",
+  "performancePassed": true,
   "passed": true,
-  "note": "Small ROI, three fresh directories; comparison covers task execution, not manual UI interaction or full-region speed."
+  "note": "\u5C0F\u533A\u57DF\u4E09\u8F6E\u65B0\u8F93\u51FA\u76EE\u5F55\uFF1B\u6BD4\u8F83 CTB \u4E0E\u5305\u88C5\u5C42\u4EFB\u52A1\u6267\u884C\uFF0C\u4E0D\u542B\u4EBA\u5DE5 UI \u64CD\u4F5C\u6216\u5168\u533A\u57DF\u8017\u65F6\u3002"
 }

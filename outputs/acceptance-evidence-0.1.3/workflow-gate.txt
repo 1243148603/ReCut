@@ -1,0 +1,15 @@
+[PASS] 全流程生成三步
+[PASS] 全流程双产物
+[PASS] 全流程 layer bounds 使用真实 DEM 范围
+[PASS] 只算法不启动切片
+[PASS] 只算法不生成瓦片目录
+[PASS] 只前端不生成算法 JSON
+[PASS] 只前端 layer bounds 使用真实 DEM 范围
+[PASS] 只切片跳过其他步骤
+[PASS] 只切片不生成 layer.json
+[PASS] 只打包无需 DEM
+[PASS] 只打包生成 layer.json
+[PASS] 现成 DEM 只补元数据且不重写 TIFF
+[PASS] 失控层级拦截
+[PASS] NaN 范围拒绝
+[PASS] 打包历史字段与开关回填

@@ -53,7 +53,8 @@ public sealed record PipelinePlan(
         var jobs = new List<Job>();
         if (Mosaic) jobs.Add(new MosaicJob { InputPaths = Inputs, OutputPath = Tif, Target = Target,
             Boundaries = Boundaries, Resampling = Resampling, WriteMetadata = WantAlgo, ChainId = chain });
-        if (Slice) jobs.Add(new SliceJob { InputPath = Tif, OutputDirectory = Tiles, MaxZoom = MaxZoom, ChainId = chain });
+        if (Slice) jobs.Add(new SliceJob { InputPath = Tif, OutputDirectory = Tiles, MaxZoom = MaxZoom,
+            Resampling = Resampling, ChainId = chain });
         if (Package || (WantAlgo && !Mosaic)) jobs.Add(new PackageJob { OutputDirectory = Root,
             TilesDirectory = WantTiles && Package ? Tiles : null, AlgoTifPath = WantAlgo ? Tif : null,
             ZipTiles = Package && WantTiles && ZipTiles, ZipAlgo = Package && WantAlgo && ZipAlgo,

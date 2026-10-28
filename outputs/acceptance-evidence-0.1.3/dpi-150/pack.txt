@@ -1,0 +1,54 @@
+probe: 构造后 dpi=144 design={Width=144, Height=144} current={Width=144, Height=144} size={Width=680, Height=685}
+probe: Show 后 dpi=144 design={Width=144, Height=144} current={Width=144, Height=144} size={Width=1020, Height=1028}
+=== pack === 窗体 1020x1028
+    DPI=144 mode=Dpi design={Width=144, Height=144} current={Width=144, Height=144}
+TableLayoutPanel [0,0 1020x1028] dock=Fill autosize=False font=9pt/23px
+  GroupBox [21,21 978x243] dock=Fill autosize=True font=9pt/23px "要哪些产物"
+    TableLayoutPanel [8,27 962x212] dock=Top autosize=True font=9pt/23px
+      TableLayoutPanel [4,4 954x37] dock=Fill autosize=True font=9pt/23px
+        CheckBox [4,4 289x29] dock=None autosize=True font=9pt/23px "前端瓦片（Cesium 地形切片）"
+        CheckBox [786,4 105x29] dock=None autosize=True font=9pt/23px "打成 zip"
+      TableLayoutPanel [4,49 954x53] dock=Fill autosize=True font=9pt/23px
+        Label [0,6 147x33] dock=None autosize=False font=9pt/23px "瓦片目录："
+        TextBox [160,4 664x30] dock=Fill autosize=True font=9pt/23px
+        Button [832,4 118x45] dock=Fill autosize=False font=9pt/23px "浏览…"
+      TableLayoutPanel [4,110 954x37] dock=Fill autosize=True font=9pt/23px
+        CheckBox [4,4 260x29] dock=None autosize=True font=9pt/23px "算法数据（裁剪 GeoTIFF）"
+        CheckBox [786,4 105x29] dock=None autosize=True font=9pt/23px "打成 zip"
+      TableLayoutPanel [4,155 954x53] dock=Fill autosize=True font=9pt/23px
+        Label [0,6 147x33] dock=None autosize=False font=9pt/23px "裁剪 GeoTIFF："
+        TextBox [160,4 664x30] dock=Fill autosize=True font=9pt/23px
+        Button [832,4 118x45] dock=Fill autosize=False font=9pt/23px "浏览…"
+  GroupBox [21,276 978x317] dock=Fill autosize=True font=9pt/23px "layer.json"
+    TableLayoutPanel [8,27 962x286] dock=Top autosize=True font=9pt/23px
+      TableLayoutPanel [4,4 954x39] dock=Fill autosize=True font=9pt/23px
+        Label [0,6 147x33] dock=None autosize=False font=9pt/23px "name："
+        TextBox [160,4 148x30] dock=None autosize=True font=9pt/23px
+        Label [660,6 105x33] dock=None autosize=False font=9pt/23px "version："
+        TextBox [778,4 148x30] dock=None autosize=True font=9pt/23px
+      TableLayoutPanel [4,51 954x39] dock=Fill autosize=True font=9pt/23px
+        Label [0,6 147x33] dock=None autosize=False font=9pt/23px "description："
+        TextBox [160,4 790x30] dock=Fill autosize=True font=9pt/23px
+      TableLayoutPanel [4,98 954x39] dock=Fill autosize=True font=9pt/23px
+        Label [0,6 147x33] dock=None autosize=False font=9pt/23px "bounds："
+        TextBox [160,4 790x30] dock=Fill autosize=True font=9pt/23px
+      TableLayoutPanel [4,145 954x39] dock=Fill autosize=True font=9pt/23px
+        Label [0,6 147x33] dock=None autosize=False font=9pt/23px "maxzoom："
+        TextBox [160,4 790x30] dock=Fill autosize=True font=9pt/23px
+      TableLayoutPanel [4,192 954x53] dock=Fill autosize=True font=9pt/23px
+        Label [0,6 147x33] dock=None autosize=False font=9pt/23px "边界文件："
+        TextBox [160,4 664x30] dock=Fill autosize=True font=9pt/23px
+        Button [832,4 118x45] dock=Fill autosize=False font=9pt/23px "浏览…"
+      Label [0,261 787x25] dock=None autosize=True font=9pt/23px "format=heightmap-1…"
+  GroupBox [21,605 978x92] dock=Fill autosize=True font=9pt/23px "输出"
+    TableLayoutPanel [8,27 962x61] dock=Top autosize=True font=9pt/23px
+      TableLayoutPanel [4,4 954x53] dock=Fill autosize=True font=9pt/23px
+        Label [0,6 147x33] dock=None autosize=False font=9pt/23px "zip 输出到："
+        TextBox [160,4 664x30] dock=Fill autosize=True font=9pt/23px
+        Button [832,4 118x45] dock=Fill autosize=False font=9pt/23px "浏览…"
+  Label [21,712 154x24] dock=None autosize=True font=9pt/23px "至少选一套产物。"
+  FlowLayoutPanel [21,748 978x259] dock=Fill autosize=True font=9pt/23px
+    Button [818,4 156x34] dock=None autosize=False font=9pt/23px "开始打包"
+    Button [672,4 138x34] dock=None autosize=False font=9pt/23px "取消"
+
+--- Show 之后 ClientSize=1020x1028

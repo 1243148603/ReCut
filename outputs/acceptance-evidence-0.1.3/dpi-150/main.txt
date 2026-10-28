@@ -1,0 +1,14 @@
+probe: 构造后 dpi=144 design={Width=144, Height=144} current={Width=144, Height=144} size={Width=1098, Height=684}
+probe: Show 后 dpi=144 design={Width=144, Height=144} current={Width=144, Height=144} size={Width=1647, Height=1026}
+=== main === 窗体 1647x1026
+    DPI=144 mode=Dpi design={Width=144, Height=144} current={Width=144, Height=144}
+SplitContainer [0,43 1647x952] dock=Fill autosize=False font=9pt/23px
+  SplitterPanel [0,0 1647x675] dock=None autosize=False font=9pt/23px
+    ListView [0,0 1647x675] dock=Fill autosize=False font=9pt/23px
+  SplitterPanel [0,681 1647x271] dock=None autosize=False font=9pt/23px
+    TextBox [0,33 1647x238] dock=Fill autosize=True font=9pt/22px "[11:17:01] CTB 工具：…"
+    Label [0,0 1647x33] dock=Top autosize=False font=9pt/23px "日志"
+ToolStrip [0,0 1647x43] dock=Top autosize=True font=9pt/23px
+StatusStrip [0,995 1647x31] dock=Bottom autosize=True font=9pt/23px
+
+--- Show 之后 ClientSize=1647x1026

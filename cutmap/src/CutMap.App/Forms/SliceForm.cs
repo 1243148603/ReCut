@@ -17,6 +17,7 @@ public sealed class SliceForm : ThemedForm
     private readonly TextBox _output = new();
     private readonly NumericUpDown _maxZoom = new();
     private readonly CheckBox _autoZoom = new();
+    private readonly ComboBox _resampling = new() { DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly Label _inputSummary = new();
     private readonly Label _estimate = new();
     private readonly Button _ok = new();
@@ -26,6 +27,7 @@ public sealed class SliceForm : ThemedForm
     public string InputPath => _input.Text.Trim();
     public string OutputDirectory => _output.Text.Trim();
     public int? MaxZoom => _autoZoom.Checked ? null : (int)_maxZoom.Value;
+    public string Resampling => _resampling.SelectedItem?.ToString() ?? "bilinear";
 
     /// <param name="initialInput">从历史重跑时预填的输入栅格。</param>
     /// <param name="initialOutput">预填的输出目录。</param>
@@ -43,6 +45,8 @@ public sealed class SliceForm : ThemedForm
         Font = new Font("Microsoft YaHei UI", 9F);
 
         BuildLayout();
+
+        _resampling.SelectedItem = preset?.Resampling ?? "bilinear";
 
         if (initialInput is not null) LoadInput(initialInput);
         if (initialOutput is not null) _output.Text = initialOutput;
@@ -116,11 +120,17 @@ public sealed class SliceForm : ThemedForm
         zoomRow.Controls.Add(_maxZoom);
         layout.Controls.Add(zoomRow, 1, 3);
 
+        // ---- 重采样 ----
+        layout.Controls.Add(new Label { Text = "重采样：", Anchor = AnchorStyles.Left, AutoSize = true }, 0, 4);
+        _resampling.Items.AddRange(["bilinear", "near", "cubic", "cubicspline", "lanczos", "average"]);
+        _resampling.Width = 150;
+        layout.Controls.Add(_resampling, 1, 4);
+
         // ---- 预估 ----
         _estimate.Dock = DockStyle.Fill;
         _estimate.AutoEllipsis = true;
         _estimate.Padding = new Padding(0, 6, 0, 0);
-        layout.Controls.Add(_estimate, 1, 4);
+        layout.Controls.Add(_estimate, 1, 5);
         layout.SetColumnSpan(_estimate, 2);
 
         // ---- 按钮 ----
@@ -142,10 +152,10 @@ public sealed class SliceForm : ThemedForm
         };
         buttons.Controls.Add(cancel);
         buttons.Controls.Add(_ok);
-        layout.Controls.Add(buttons, 0, 6);
+        layout.Controls.Add(buttons, 0, 7);
         layout.SetColumnSpan(buttons, 3);
 
-        for (var r = 0; r < 5; r++) layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        for (var r = 0; r < 6; r++) layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 

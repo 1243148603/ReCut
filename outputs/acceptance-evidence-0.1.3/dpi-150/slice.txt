@@ -1,0 +1,26 @@
+probe: 构造后 dpi=144 design={Width=144, Height=144} current={Width=144, Height=144} size={Width=620, Height=330}
+probe: Show 后 dpi=144 design={Width=144, Height=144} current={Width=144, Height=144} size={Width=930, Height=495}
+=== slice === 窗体 930x495
+    DPI=144 mode=Dpi design={Width=144, Height=144} current={Width=144, Height=144}
+TableLayoutPanel [0,0 930x495] dock=Fill autosize=False font=9pt/23px
+  Label [25,44 111x24] dock=None autosize=True font=9pt/23px "输入 DEM："
+  TextBox [157,25 622x30] dock=Fill autosize=True font=9pt/23px
+  Button [787,25 118x63] dock=Fill autosize=False font=9pt/23px "浏览…"
+  Label [157,92 748x34] dock=Fill autosize=False font=9pt/23px
+  Label [25,149 100x24] dock=None autosize=True font=9pt/23px "输出目录："
+  TextBox [157,130 622x30] dock=Fill autosize=True font=9pt/23px
+  Button [787,130 118x63] dock=Fill autosize=False font=9pt/23px "浏览…"
+  Label [25,204 100x24] dock=None autosize=True font=9pt/23px "最深层级："
+  FlowLayoutPanel [153,197 630x38] dock=Fill autosize=True font=9pt/23px
+    CheckBox [4,4 252x28] dock=None autosize=True font=9pt/23px "自动（按栅格分辨率推算）"
+    NumericUpDown [264,4 96x30] dock=None autosize=False font=9pt/23px "14"
+      UpDownButtons [71,1 24x28] dock=None autosize=False font=9pt/23px
+      UpDownEdit [2,2 68x26] dock=None autosize=False font=9pt/23px "14"
+  Label [25,243 82x24] dock=None autosize=True font=9pt/23px "重采样："
+  ComboBox [157,239 223x32] dock=None autosize=False font=9pt/23px "bilinear"
+  Label [157,275 748x34] dock=Fill autosize=False font=9pt/23px "请先选择输入 DEM。"
+  FlowLayoutPanel [25,428 880x42] dock=Fill autosize=True font=9pt/23px
+    Button [750,4 126x34] dock=None autosize=False font=9pt/23px "取消"
+    Button [598,4 144x34] dock=None autosize=False font=9pt/23px "开始切片"
+
+--- Show 之后 ClientSize=930x495

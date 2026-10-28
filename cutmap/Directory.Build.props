@@ -13,7 +13,7 @@
   -->
 
   <PropertyGroup>
-    <Version>0.1.2</Version>
+    <Version>0.1.3</Version>
     <Product>CutMap</Product>
     <AssemblyName Condition="'$(AssemblyName)' == ''">$(MSBuildProjectName)</AssemblyName>
     <Company>CutMap</Company>

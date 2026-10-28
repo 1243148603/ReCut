@@ -15,7 +15,8 @@ internal static class Program
     {
         if (args.Length > 2 && args[0] == "--slice-benchmark")
         {
-            Environment.Exit(Jobs.EndToEndGate.Benchmark(args[1], args[2]));
+            var rounds = args.Length > 3 ? int.Parse(args[3]) : 3;
+            Environment.Exit(Jobs.EndToEndGate.Benchmark(args[1], args[2], rounds));
         }
         if (args.Length > 1 && args[0] == "--e2e-gate")
         {

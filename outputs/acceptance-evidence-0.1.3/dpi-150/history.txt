@@ -1,0 +1,16 @@
+probe: 构造后 dpi=144 design={Width=144, Height=144} current={Width=144, Height=144} size={Width=918, Height=504}
+probe: Show 后 dpi=144 design={Width=144, Height=144} current={Width=144, Height=144} size={Width=1377, Height=756}
+=== history === 窗体 1377x756
+    DPI=144 mode=Dpi design={Width=144, Height=144} current={Width=144, Height=144}
+Panel [0,0 1377x579] dock=Fill autosize=False font=9pt/23px
+  ListView [0,0 1188x579] dock=Fill autosize=False font=9pt/23px
+  FlowLayoutPanel [1188,0 189x579] dock=Right autosize=False font=9pt/23px
+    Button [16,16 138x48] dock=None autosize=False font=9pt/23px "重跑…"
+    Button [16,72 138x48] dock=None autosize=False font=9pt/23px "删除"
+    Button [16,128 138x48] dock=None autosize=False font=9pt/23px "清空全部"
+    Button [16,184 138x48] dock=None autosize=False font=9pt/23px "导出日志…"
+Label [0,579 1377x114] dock=Bottom autosize=False font=9pt/23px "共 36 条记录。"
+FlowLayoutPanel [0,693 1377x63] dock=Bottom autosize=True font=9pt/23px
+  Button [1211,10 126x34] dock=None autosize=False font=9pt/23px "关闭"
+
+--- Show 之后 ClientSize=1377x756

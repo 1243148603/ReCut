@@ -8,20 +8,23 @@ namespace CutMap.App.Jobs;
 
 internal static class EndToEndGate
 {
-    public static int Benchmark(string repo, string input)
+    public static int Benchmark(string repo, string input, int rounds = 3)
     {
         var root = Path.Combine(repo, "cutmap", "_gate", "benchmark", Guid.NewGuid().ToString("N"));
         var home = CtbHome.Default(repo);
         var observations = new List<object>();
+        var nativeTimes = new List<double>();
+        var wrapperTimes = new List<double>();
         var allPassed = true;
-        for (var round = 0; round < 3; round++)
+        for (var round = 0; round < rounds; round++)
         {
             var nativeOutput = Path.Combine(root, $"native-{round}");
             var guiOutput = Path.Combine(root, $"gui-{round}");
             Directory.CreateDirectory(nativeOutput);
             var start = new ProcessStartInfo(home.ExePath) { UseShellExecute = false,
                 RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true };
-            foreach (var arg in new[] { "-m", "67108864", "-s", "14", "-e", "0", "-o", nativeOutput, input }) start.ArgumentList.Add(arg);
+            // 与包装层使用相同的 CTB 参数；否则计时结果会混入重采样算法差异。
+            foreach (var arg in new[] { "-m", "67108864", "-s", "14", "-e", "0", "-r", "bilinear", "-o", nativeOutput, input }) start.ArgumentList.Add(arg);
             start.Environment["PROJ_DATA"] = home.ProjData;
             start.Environment["GDAL_DATA"] = home.GdalData;
             var watch = Stopwatch.StartNew();
@@ -38,11 +41,19 @@ internal static class EndToEndGate
             var sameCounts = Slicer.CountByLevel(nativeOutput, 14).SequenceEqual(Slicer.CountByLevel(guiOutput, 14));
             var passed = result.Succeeded && process.ExitCode == 0 && !stderr.Result.Contains("Error:") && sameCounts;
             allPassed &= passed;
-            observations.Add(new { round, nativeSeconds, guiSeconds, ratio = guiSeconds / nativeSeconds, sameCounts, passed });
+            nativeTimes.Add(nativeSeconds);
+            wrapperTimes.Add(guiSeconds);
+            observations.Add(new { round, nativeSeconds, guiSeconds, overheadRate = (guiSeconds - nativeSeconds) / nativeSeconds, sameCounts, passed });
         }
+        var nativeMedian = nativeTimes.Order().ElementAt(nativeTimes.Count / 2);
+        var wrapperMedian = wrapperTimes.Order().ElementAt(wrapperTimes.Count / 2);
+        var overheadRate = (wrapperMedian - nativeMedian) / nativeMedian;
+        var performancePassed = overheadRate <= 0.10;
+        allPassed &= performancePassed;
         File.WriteAllText(Path.Combine(repo, "outputs", "stage5-wrapper-benchmark.json"),
-            JsonSerializer.Serialize(new { input, observations, passed = allPassed,
-                note = "Small ROI, three fresh directories; comparison covers task execution, not manual UI interaction or full-region speed." }, new JsonSerializerOptions { WriteIndented = true }));
+            JsonSerializer.Serialize(new { input, observations, nativeMedian, wrapperMedian, overheadRate,
+                target = "包装层中位数额外开销 ≤ 10%", performancePassed, passed = allPassed,
+                note = $"全量 DEM {rounds} 轮新输出目录；比较 CTB 与包装层任务执行，不含人工 UI 操作。" }, new JsonSerializerOptions { WriteIndented = true }));
         return allPassed ? 0 : 1;
     }
 

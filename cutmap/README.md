@@ -1,8 +1,8 @@
 # CutMap
 
-0.1.2 的标准安装包使用 Inno Setup（中文、当前用户安装），绿色版仍可解压运行。
-构建：`powershell -File cutmap\pack-inno.ps1 -Iscc <ISCC.exe路径> -SourceRevision <提交号>`。
-`pack-installer.ps1` 保留为旧自定义安装器的兼容构建入口。
+0.1.3 的标准安装包使用当前用户范围的自包含安装器，绿色版仍可解压运行。
+构建绿色版：`powershell -File cutmap\pack-release.ps1 -SourceRevision <提交号>`；
+构建安装包：`powershell -File cutmap\pack-installer.ps1 -SourceRevision <提交号>`。
 边界数据按 2026-10-22 用户批准改以现有 DataV 为本版基准，清单见 `resources/boundary-manifest.json`。
 新建任务中的多步向导支持步骤勾选与跳页；单步对话框继续可用。
 外部边界转换为 WGS84 后存入 `%APPDATA%\CutMap\boundaries`，可跨重启供历史回填。
@@ -35,7 +35,7 @@
 
 **绿色版**
 
-解压 `CutMap-0.1.0-win-x64.zip` 后直接运行 `CutMap.App.exe`，不写注册表。
+解压 `CutMap-0.1.3-win-x64.zip` 后直接运行 `CutMap.App.exe`，不写注册表。
 注意 `ctb\` 必须与 exe 同级或在其上层（程序从 exe 所在目录逐级往上找）。
 
 首次使用建议按这个顺序：
@@ -240,8 +240,8 @@ CutMap.Cli verify <dir> # 校验已有瓦片集能否被 Cesium 加载
 - **Copernicus DEM GLO-30**：分发产物时须注明出处
   （`Contains modified Copernicus DEM GLO-30 data, © ESA / European Commission`）
 - **行政区划数据**：来源为天地图时，随产物分发须注明数据来源
-# 0.1.2 本轮验收状态
+# 0.1.3 本轮验收状态
 
-本版已修复坐标与覆盖判断、产物关联、日志与持久化、向导及安装升级卸载问题。边界数据按用户批准采用 DataV，版本及校验值见 `resources/boundary-manifest.json`。
+本版修复 CTB 重采样参数未传递与不必要的分段切片开销；25 点 Cesium 三角插值复验最大绝对误差为 0.2692 米，三次全量性能复测的包装层中位数开销为 -5.87%。绿色包与当前用户范围安装包均已完成自包含、安装、启动和卸载验证。边界数据按用户批准采用 DataV，版本及校验值见 `resources/boundary-manifest.json`。
 
-总体验收仍未通过：重庆 30 幅切片实测约 12.8 分钟；25 点高程抽检最大偏差 6.710 米，未满足 1 米要求。原生 CTB 与 GUI 任务产物抽样一致并不能证明高度精度达标。试验引擎未放入正式包；完整证据及后续方案见仓库 `outputs/整改执行记录.md`。干净 Win10/Win11 虚拟机安装尚待验证。
+验收限制：本机仅能实际复验 150% DPI；官方 Copernicus 小样本下载在五分钟内未完成，保留断点文件并列为外部源暂缓项；安装包未签名，首次运行可能触发 SmartScreen。完整状态、证据与后续验证要求见 `outputs/acceptance-evidence-0.1.3/acceptance-summary.md`。

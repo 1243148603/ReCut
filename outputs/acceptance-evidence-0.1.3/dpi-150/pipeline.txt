@@ -1,0 +1,78 @@
+probe: 构造后 dpi=144 design={Width=144, Height=144} current={Width=144, Height=144} size={Width=918, Height=644}
+probe: Show 后 dpi=144 design={Width=144, Height=144} current={Width=144, Height=144} size={Width=1377, Height=966}
+=== pipeline === 窗体 1377x966
+    DPI=144 mode=Dpi design={Width=144, Height=144} current={Width=144, Height=144}
+TableLayoutPanel [0,0 1377x966] dock=Fill autosize=False font=9pt/23px
+  TabControl [22,22 1333x827] dock=Fill autosize=False font=9pt/23px
+    TabPage [4,39 1325x784] dock=None autosize=False font=9pt/23px "输入与步骤"
+      FlowLayoutPanel [0,0 1325x784] dock=Fill autosize=False font=9pt/23px
+        ListView [22,22 1228x283] dock=None autosize=False font=9pt/23px
+        FlowLayoutPanel [22,313 331x59] dock=None autosize=True font=9pt/23px
+          Button [4,4 177x51] dock=None autosize=True font=9pt/23px "添加 DEM…"
+          Button [189,4 138x51] dock=None autosize=True font=9pt/23px "移除选中"
+        FlowLayoutPanel [22,380 375x36] dock=None autosize=True font=9pt/23px
+          CheckBox [4,4 108x28] dock=None autosize=True font=9pt/23px "拼接裁剪"
+          CheckBox [120,4 72x28] dock=None autosize=True font=9pt/23px "切片"
+          CheckBox [200,4 171x28] dock=None autosize=True font=9pt/23px "打包 / layer.json"
+        FlowLayoutPanel [22,424 347x36] dock=None autosize=True font=9pt/23px
+          CheckBox [4,4 108x28] dock=None autosize=True font=9pt/23px "前端瓦片"
+          CheckBox [120,4 223x28] dock=None autosize=True font=9pt/23px "算法 GeoTIFF + 元数据"
+        FlowLayoutPanel [22,468 1124x59] dock=None autosize=True font=9pt/23px
+          Label [4,0 330x42] dock=None autosize=False font=9pt/23px "输出根目录"
+          TextBox [342,4 658x30] dock=None autosize=True font=9pt/23px
+          Button [1008,4 112x51] dock=None autosize=True font=9pt/23px "浏览…"
+        FlowLayoutPanel [22,535 1124x59] dock=None autosize=True font=9pt/23px
+          Label [4,0 330x42] dock=None autosize=False font=9pt/23px "已有瓦片（跳过切片时）"
+          TextBox [342,4 658x30] dock=None autosize=True font=9pt/23px
+          Button [1008,4 112x51] dock=None autosize=True font=9pt/23px "浏览…"
+        Label [22,598 685x24] dock=None autosize=True font=9pt/23px "跳过拼接时选单幅现成 DEM；跳过切…"
+    TabPage [4,39 1325x784] dock=None autosize=False font=9pt/23px "拼接裁剪"
+      FlowLayoutPanel [0,0 1325x784] dock=Fill autosize=False font=9pt/23px
+        FlowLayoutPanel [22,22 1004x42] dock=None autosize=True font=9pt/23px
+          Label [4,0 330x42] dock=None autosize=False font=9pt/23px "范围：西 南 东 北"
+          TextBox [342,4 658x30] dock=None autosize=True font=9pt/23px
+        FlowLayoutPanel [22,72 346x59] dock=None autosize=True font=9pt/23px
+          Button [4,4 192x51] dock=None autosize=True font=9pt/23px "使用输入范围"
+          Button [204,4 138x51] dock=None autosize=True font=9pt/23px "重庆全域"
+        FlowLayoutPanel [22,139 428x59] dock=None autosize=True font=9pt/23px
+          CheckBox [4,4 162x28] dock=None autosize=True font=9pt/23px "按行政边界裁剪"
+          Button [174,4 160x51] dock=None autosize=True font=9pt/23px "选择边界…"
+          Label [342,0 82x24] dock=None autosize=True font=9pt/23px "未选边界"
+        FlowLayoutPanel [22,206 674x42] dock=None autosize=True font=9pt/23px
+          Label [4,0 330x42] dock=None autosize=False font=9pt/23px "重采样"
+          ComboBox [342,4 328x32] dock=None autosize=False font=9pt/23px "bilinear"
+    TabPage [4,39 1325x784] dock=None autosize=False font=9pt/23px "切片"
+      FlowLayoutPanel [0,0 1325x784] dock=Fill autosize=False font=9pt/23px
+        FlowLayoutPanel [22,22 1004x42] dock=None autosize=True font=9pt/23px
+          Label [4,0 330x42] dock=None autosize=False font=9pt/23px "最大层级（留空自动）"
+          TextBox [342,4 658x30] dock=None autosize=True font=9pt/23px
+        Label [22,68 242x24] dock=None autosize=True font=9pt/23px "选择 DEM 后显示参考层级。"
+    TabPage [4,39 1325x784] dock=None autosize=False font=9pt/23px "导出"
+      FlowLayoutPanel [0,0 1325x784] dock=Fill autosize=False font=9pt/23px
+        FlowLayoutPanel [22,22 222x36] dock=None autosize=True font=9pt/23px
+          CheckBox [4,4 103x28] dock=None autosize=True font=9pt/23px "瓦片 zip"
+          CheckBox [115,4 103x28] dock=None autosize=True font=9pt/23px "算法 zip"
+        FlowLayoutPanel [22,66 1004x42] dock=None autosize=True font=9pt/23px
+          Label [4,0 330x42] dock=None autosize=False font=9pt/23px "name"
+          TextBox [342,4 658x30] dock=None autosize=True font=9pt/23px "terrain"
+        FlowLayoutPanel [22,116 1004x42] dock=None autosize=True font=9pt/23px
+          Label [4,0 330x42] dock=None autosize=False font=9pt/23px "description"
+          TextBox [342,4 658x30] dock=None autosize=True font=9pt/23px "Cesium terrain til…"
+        FlowLayoutPanel [22,166 1004x42] dock=None autosize=True font=9pt/23px
+          Label [4,0 330x42] dock=None autosize=False font=9pt/23px "version"
+          TextBox [342,4 658x30] dock=None autosize=True font=9pt/23px "1.0.0"
+        FlowLayoutPanel [22,216 1004x42] dock=None autosize=True font=9pt/23px
+          Label [4,0 330x42] dock=None autosize=False font=9pt/23px "layer bounds（留空反推）"
+          TextBox [342,4 658x30] dock=None autosize=True font=9pt/23px
+        FlowLayoutPanel [22,266 1004x42] dock=None autosize=True font=9pt/23px
+          Label [4,0 330x42] dock=None autosize=False font=9pt/23px "layer maxzoom（留空反推…"
+          TextBox [342,4 658x30] dock=None autosize=True font=9pt/23px
+        Label [22,312 554x24] dock=None autosize=True font=9pt/23px "算法数据共用裁剪结果；未裁剪时保留原…"
+  Label [22,853 1230x24] dock=Fill autosize=True font=9pt/23px "请填写有效裁剪范围。"
+  FlowLayoutPanel [18,889 1341x59] dock=Fill autosize=True font=9pt/23px
+    Button [1181,4 156x51] dock=None autosize=True font=9pt/23px "开始执行"
+    Button [1035,4 138x51] dock=None autosize=True font=9pt/23px "下一步"
+    Button [889,4 138x51] dock=None autosize=True font=9pt/23px "上一步"
+    Button [743,4 138x34] dock=None autosize=False font=9pt/23px "取消"
+
+--- Show 之后 ClientSize=1377x966

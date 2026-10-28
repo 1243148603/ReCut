@@ -68,13 +68,14 @@ internal static class VerifyCommand
         ok &= Check("目录里有最深层的瓦片",
                     coverage.DeepestZoom == declaredMaxZoom);
 
-        // 声明的 bounds 应当盖住瓦片实际包络（瓦片是按整格切的，只会更大不会更小）。
+        // 瓦片按整格生成，包络应盖住真实产品 bounds，而不是反过来要求产品 bounds
+        // 扩大到整格。layer.json 对外声明的是实际 DEM/裁剪范围。
         var tileBounds = coverage.Bounds;
-        var covered = declaredBounds[0] <= tileBounds.West + 1e-9 &&
-                      declaredBounds[1] <= tileBounds.South + 1e-9 &&
-                      declaredBounds[2] >= tileBounds.East - 1e-9 &&
-                      declaredBounds[3] >= tileBounds.North - 1e-9;
-        ok &= Check("bounds 盖住瓦片包络", covered,
+        var covered = tileBounds.West <= declaredBounds[0] + 1e-9 &&
+                      tileBounds.South <= declaredBounds[1] + 1e-9 &&
+                      tileBounds.East >= declaredBounds[2] - 1e-9 &&
+                      tileBounds.North >= declaredBounds[3] - 1e-9;
+        ok &= Check("瓦片包络盖住 bounds", covered,
                     true, $"瓦片包络 [{tileBounds.West:F4}, {tileBounds.South:F4}, " +
                           $"{tileBounds.East:F4}, {tileBounds.North:F4}]");
 
@@ -202,7 +203,7 @@ internal static class VerifyCommand
         return null;
     }
 
-    /// <summary>按同一坐标双线性插值瓦片网格高程，取不到返回 null。</summary>
+    /// <summary>按 Cesium HeightmapTerrainData 的三角网格插值高程，取不到返回 null。</summary>
     private static double? SampleTileHeight(string tilesDirectory, int zoom, double lon, double lat)
     {
         var (x, y) = CtbGrid.TileIndex(lon, lat, zoom);
@@ -228,10 +229,16 @@ internal static class VerifyCommand
         var row = Math.Min(63, (int)Math.Floor(rowValue));
         var dx = column - col;
         var dy = rowValue - row;
-        return DecodeHeight(payload, row, col) * (1 - dx) * (1 - dy)
-            + DecodeHeight(payload, row, col + 1) * dx * (1 - dy)
-            + DecodeHeight(payload, row + 1, col) * (1 - dx) * dy
-            + DecodeHeight(payload, row + 1, col + 1) * dx * dy;
+        // Cesium 将每个格网沿 southwest → northeast 对角线拆成两个三角形，
+        // sampleTerrain/interpolateHeight 使用线性三角插值，不是双线性插值。
+        var northWest = DecodeHeight(payload, row, col);
+        var northEast = DecodeHeight(payload, row, col + 1);
+        var southWest = DecodeHeight(payload, row + 1, col);
+        var southEast = DecodeHeight(payload, row + 1, col + 1);
+        var fromSouth = 1.0 - dy;
+        if (fromSouth < dx)
+            return southWest + dx * (southEast - southWest) + fromSouth * (northEast - southEast);
+        return southWest + dx * (northEast - northWest) + fromSouth * (northWest - southWest);
 
     }
 

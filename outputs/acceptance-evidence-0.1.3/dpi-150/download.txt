@@ -1,0 +1,39 @@
+probe: 构造后 dpi=144 design={Width=144, Height=144} current={Width=144, Height=144} size={Width=760, Height=430}
+probe: Show 后 dpi=144 design={Width=144, Height=144} current={Width=144, Height=144} size={Width=1140, Height=645}
+=== download === 窗体 1140x645
+    DPI=144 mode=Dpi design={Width=144, Height=144} current={Width=144, Height=144}
+TableLayoutPanel [0,0 1140x582] dock=Fill autosize=False font=9pt/23px
+  TableLayoutPanel [22,22 1096x76] dock=Top autosize=True font=9pt/23px
+    Label [4,9 82x24] dock=None autosize=True font=9pt/23px "下载源："
+    ComboBox [94,4 508x32] dock=None autosize=False font=9pt/23px "Copernicus GLO-30 …"
+    Button [610,4 132x34] dock=None autosize=False font=9pt/23px "管理源…"
+    Label [94,42 998x34] dock=Fill autosize=False font=9pt/23px
+  GroupBox [22,106 1096x291] dock=Fill autosize=True font=9pt/23px "区域（WGS84 经纬度，按 1°×…"
+    TableLayoutPanel [8,27 1080x260] dock=Top autosize=True font=9pt/23px
+      Label [16,19 66x25] dock=None autosize=True font=9pt/23px "预设："
+      ComboBox [160,16 208x33] dock=None autosize=False font=9pt/23px
+      Label [376,19 30x25] dock=None autosize=True font=9pt/23px "西"
+      TextBox [414,16 136x30] dock=None autosize=True font=9pt/23px
+      Label [558,19 30x25] dock=None autosize=True font=9pt/23px "南"
+      TextBox [710,16 136x30] dock=None autosize=True font=9pt/23px
+      Label [854,19 30x25] dock=None autosize=True font=9pt/23px "东"
+      TextBox [892,16 136x30] dock=None autosize=True font=9pt/23px
+      Label [1036,19 30x25] dock=None autosize=True font=9pt/23px "北"
+      TextBox [16,56 136x30] dock=None autosize=True font=9pt/23px
+      CheckBox [16,128 488x29] dock=None autosize=True font=9pt/23px "按行政区划（按边界真实相交推导，比外…"
+      Button [558,128 144x34] dock=None autosize=False font=9pt/23px "选择边界…"
+      Label [16,166 150x34] dock=None autosize=False font=9pt/23px
+      Label [16,90 1278x34] dock=Fill autosize=False font=9pt/23px
+      FlowLayoutPanel [12,206 379x42] dock=None autosize=True font=9pt/23px
+        Button [4,4 198x34] dock=None autosize=False font=9pt/23px "用已有 DEM 范围…"
+        Button [210,4 165x34] dock=None autosize=False font=9pt/23px "用已有瓦片…"
+  TableLayoutPanel [22,405 1096x76] dock=Top autosize=True font=9pt/23px
+    Label [4,9 82x24] dock=None autosize=True font=9pt/23px "保存到："
+    TextBox [94,4 148x30] dock=Fill autosize=True font=9pt/23px
+    Button [250,4 120x34] dock=None autosize=False font=9pt/23px "浏览…"
+    Label [94,42 998x34] dock=Fill autosize=False font=9pt/23px "区域要填四个数：西 南 东 北。"
+FlowLayoutPanel [0,582 1140x63] dock=Bottom autosize=True font=9pt/23px
+  Button [974,10 126x34] dock=None autosize=False font=9pt/23px "取消"
+  Button [822,10 144x34] dock=None autosize=False font=9pt/23px "开始下载"
+
+--- Show 之后 ClientSize=1140x645

@@ -9,7 +9,9 @@ public sealed record SliceRequest(
     /// <summary>最深层级。null = 按栅格像元尺寸推导（与 ctb-tile 省略 -s 的行为一致）。</summary>
     int? MaxZoom = null,
     /// <summary>最粗层级。null = 0。</summary>
-    int? MinZoom = null);
+    int? MinZoom = null,
+    /// <summary>CTB 内部 GDAL warp 的重采样方法。</summary>
+    string Resampling = "bilinear");
 
 public sealed record SliceOutcome(
     bool Succeeded,
@@ -76,7 +78,7 @@ public static class Slicer
         CtbTileResult ctbResult;
         if (ChooseShallowSplit(info, maxZoom, minZoom) is { } shallowStart)
         {
-            // **浅层单独起进程。** CTB 的 TerrainTiler 不接受 -m（warp 内存无上限），
+            // **浅层单独起进程。** 即使限制了单次 warp 内存，z0/z1 的大块读取仍会
             // z0/z1 一个瓦片就覆盖整幅栅格，GDAL 会一次申请 width×height×4 字节。
             // 深层跑完后同一进程里再做这次分配，在内存紧张时会失败（实测在 z0 报
             // "cannot allocate 1026499108 bytes" → "Could not read heights from raster"）。
@@ -84,7 +86,8 @@ public static class Slicer
             var deepWeight = DeepWeight(estimate, shallowStart + 1, maxZoom, minZoom);
             var deep = CtbTileRunner.Run(
                 home,
-                new CtbTileRequest(request.InputPath, request.OutputDirectory, maxZoom, shallowStart + 1),
+                new CtbTileRequest(request.InputPath, request.OutputDirectory, maxZoom, shallowStart + 1,
+                                   Resampling: request.Resampling),
                 onProgress is null ? null : p => onProgress(p * deepWeight),
                 onLog, cancellation);
             if (!deep.Succeeded) return Failed(deep, maxZoom, estimate);
@@ -94,7 +97,8 @@ public static class Slicer
             var shallow = CtbTileRunner.Run(
                 home,
                 new CtbTileRequest(request.InputPath, request.OutputDirectory, shallowStart, minZoom,
-                                   ThreadCount: Math.Min(2, Environment.ProcessorCount)),
+                                   ThreadCount: Math.Min(2, Environment.ProcessorCount),
+                                   Resampling: request.Resampling),
                 onProgress is null ? null : p => onProgress(deepWeight + p * (1.0 - deepWeight)),
                 onLog, cancellation);
             if (!shallow.Succeeded) return Failed(shallow, maxZoom, estimate);
@@ -110,7 +114,8 @@ public static class Slicer
         {
             ctbResult = CtbTileRunner.Run(
                 home,
-                new CtbTileRequest(request.InputPath, request.OutputDirectory, maxZoom, minZoom),
+                new CtbTileRequest(request.InputPath, request.OutputDirectory, maxZoom, minZoom,
+                                   Resampling: request.Resampling),
                 onProgress, onLog, cancellation);
             if (!ctbResult.Succeeded) return Failed(ctbResult, maxZoom, estimate);
         }
@@ -135,14 +140,16 @@ public static class Slicer
     /// <summary>
     /// 需要把浅层拆到独立进程时返回浅层起始层级，否则 null。
     ///
-    /// 触发条件：栅格按 Float32 解压后 ≥ 512 MB——CTB 在浅层会把整幅源数据读进
+    /// 触发条件：栅格按 Float32 解压后 ≥ 2 GB——CTB 在浅层会把整幅源数据读进
     /// 一次 warp。边界取 z8（一个瓦片约覆盖 0.7°，远小于整幅），浅层进程只需
     /// 处理 z8..z0，实测几十个瓦片、几秒钟。
     /// </summary>
     private static int? ChooseShallowSplit(RasterInfo info, int maxZoom, int minZoom)
     {
         var bytes = (long)info.Width * info.Height * 4;
-        if (bytes < 512L * 1024 * 1024) return null;
+        // 1.09 GB 重庆 DEM 已在相同 -m=64 MiB 条件下连续三次直接 CTB 成功；
+        // 过早拆分会失去同一进程的缓存，实测带来约 30% 以上的额外时间。
+        if (bytes < 2L * 1024 * 1024 * 1024) return null;
         var split = Math.Min(8, maxZoom - 1);
         return split >= minZoom && split < maxZoom ? split : null;
     }

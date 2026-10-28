@@ -250,6 +250,7 @@ public sealed class MainForm : ThemedForm
             InputPath = dialog.InputPath,
             OutputDirectory = dialog.OutputDirectory,
             MaxZoom = dialog.MaxZoom,
+            Resampling = dialog.Resampling,
         };
     }
 
@@ -647,7 +648,7 @@ public sealed class MainForm : ThemedForm
 
         Job? job = kind switch
         {
-            "slice" => BuildSliceJob(Get("input"), Get("output"), GetInt("maxZoom")),
+            "slice" => BuildSliceJob(Get("input"), Get("output"), GetInt("maxZoom"), historyPreset),
             "mosaic" or "mosaic-vector" => BuildMosaicJob(Get("output"), GetBoundaryCodes(), historyPreset, ListOf("inputs")),
             "package" => BuildPackageJob(Get("tiles"), Get("tif"), Get("output"), historyPreset, replay),
             "download" => BuildDownloadJob(
@@ -678,6 +679,7 @@ public sealed class MainForm : ThemedForm
             InputPath = dialog.InputPath,
             OutputDirectory = dialog.OutputDirectory,
             MaxZoom = dialog.MaxZoom,
+            Resampling = dialog.Resampling,
         };
     }
 

@@ -9,6 +9,7 @@ public sealed class SliceJob : Job
     public required string InputPath { get; init; }
     public required string OutputDirectory { get; init; }
     public int? MaxZoom { get; init; }
+    public string Resampling { get; init; } = "bilinear";
 
     public override string TypeName => "切片";
     public override string Display => $"{Path.GetFileName(InputPath)} → {OutputDirectory}";
@@ -19,6 +20,7 @@ public sealed class SliceJob : Job
         input = InputPath,
         output = OutputDirectory,
         maxZoom = MaxZoom,
+        resampling = Resampling,
     });
 
     public override JobResult Execute(
@@ -29,7 +31,7 @@ public sealed class SliceJob : Job
     {
         var outcome = Slicer.Run(
             ctbHome,
-            new SliceRequest(InputPath, OutputDirectory, MaxZoom),
+            new SliceRequest(InputPath, OutputDirectory, MaxZoom, Resampling: Resampling),
             onProgress, onLog, cancellation);
 
         if (!outcome.Succeeded)

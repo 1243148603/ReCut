@@ -52,7 +52,9 @@ public sealed record CtbTileRequest(
     /// <summary>浅端（最粗层）。null = 0。</summary>
     int? EndZoom = null,
     /// <summary>线程数（-c）。null = CTB 默认（CPU 数）。浅层独立进程用少量线程，避免多个大分配并发。</summary>
-    int? ThreadCount = null);
+    int? ThreadCount = null,
+    /// <summary>GDAL warp 重采样方法（-r）。修补后的 CTB 会把该选项传给 TerrainTiler。</summary>
+    string Resampling = "bilinear");
 
 public sealed record CtbTileResult(
     /// <summary>进程的真实退出码。**不可单独用于判成败**——见类型注释。</summary>
@@ -156,6 +158,8 @@ public static class CtbTileRunner
             args.Add("-c");
             args.Add(threads.ToString(CultureInfo.InvariantCulture));
         }
+        args.Add("-r");
+        args.Add(request.Resampling);
         args.Add(inputPath);
 
         var psi = new ProcessStartInfo

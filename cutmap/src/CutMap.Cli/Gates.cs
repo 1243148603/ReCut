@@ -104,9 +104,12 @@ internal static class Gates
         }
         Console.WriteLine($"CTB: {home.ExePath}");
 
-        var workDir = Path.Combine(repoRoot, "cutmap", "_gate", "ctb");
-        if (Directory.Exists(workDir)) Directory.Delete(workDir, recursive: true);
+        // 验收证据需要可追溯；不得为了本次门禁删除上一次的输出。
+        var gateRoot = Path.Combine(repoRoot, "cutmap", "_gate");
+        Directory.CreateDirectory(gateRoot);
+        var workDir = Path.Combine(gateRoot, $"ctb-{Guid.NewGuid():N}");
         Directory.CreateDirectory(workDir);
+        Console.WriteLine($"证据目录: {workDir}");
 
         // ---- 正向：切一个小栅格，看进度与产物 ----
         // res_3_3600.tif 是 60×60 像素、0.05° 见方，切完只要几秒。
@@ -145,6 +148,29 @@ internal static class Gates
         ok &= Check("残留 *.tmp", result.TempFilesLeft.Count.ToString(), "0", result.TempFilesLeft.Count == 0);
         Console.WriteLine($"  层级目录: {string.Join(", ", levels)}");
         Console.WriteLine($"  用时: {result.Elapsed.TotalSeconds:F2} s");
+
+        // ---- 精度与参数生效：上游 CTB 0.4.1 的 Terrain 分支曾漏传 TilerOptions，
+        //      导致 -r/-z/-m 虽被解析却静默使用默认值。同时原始 terrain overlap
+        //      造成半格坐标偏移。这里既验米级高度，也验 -r 确实改变输出。
+        var smallInfo = RasterInfo.Read(small);
+        var coverage = LayerJson.InspectTiles(outDir);
+        if (coverage is not null)
+            LayerJson.Create("ctb-gate", "CTB accuracy fixture", "1.0.0", smallInfo.Extent,
+                coverage.MinZoom, coverage.DeepestZoom).WriteTo(outDir);
+        var heightVerificationPassed = VerifyCommand.Run(outDir, small) == 0;
+        ok &= Check("修补后 CTB 米级高度", heightVerificationPassed ? "通过" : "失败", "通过",
+                    heightVerificationPassed);
+
+        var averageDir = Path.Combine(workDir, "tiles_average");
+        var average = CtbTileRunner.Run(home, new CtbTileRequest(small, averageDir, Resampling: "average"));
+        var bilinearSample = Directory.EnumerateFiles(outDir, "*.terrain", SearchOption.AllDirectories).FirstOrDefault();
+        var relativeSample = bilinearSample is null ? null : Path.GetRelativePath(outDir, bilinearSample);
+        var averageSample = relativeSample is null ? null : Path.Combine(averageDir, relativeSample);
+        var resamplingDiffers = average.Succeeded && bilinearSample is not null &&
+            averageSample is not null && File.Exists(averageSample) &&
+            !File.ReadAllBytes(bilinearSample).SequenceEqual(File.ReadAllBytes(averageSample));
+        ok &= Check("-r 重采样参数真实生效", resamplingDiffers ? "不同" : "相同", "不同",
+                    resamplingDiffers);
 
         // ---- 中文路径：ctb-tile 是原生程序，argv 会被 CRT 转成本地代码页，
         //      含非 ASCII 的路径会「目录存在也报不存在」。用 ASCII 别名绕过后必须可切。

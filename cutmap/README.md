@@ -106,7 +106,7 @@ CesiumJS 1.136 起旧的构造器与 `readyPromise` 写法已移除，只能用 
 | `%APPDATA%\CutMap\history.json` | 任务历史（上限 500 条） |
 | `%APPDATA%\CutMap\presets.json` | 自定义预设 |
 | `%APPDATA%\CutMap\logs\` | 运行日志，每次启动一个文件 |
-| `resources\中国_省/市/县.geojson` | 行政区划边界，**需自备** |
+| `resources\中国_省/市/县.geojson` | 随软件提供的行政区划边界（DataV.GeoAtlas）；可按需替换或更新。 |
 
 配置放 `%APPDATA%` 而不是程序目录，是为了让开发态（exe 在 `bin\Debug\` 下，
 重编译会清目录）与打包态行为一致。
@@ -147,7 +147,7 @@ CTB 不处理 nodata，直接掩膜会让边界外被当成真实高程编进瓦
 dotnet build cutmap/CutMap.sln -c Release
 ```
 
-产物在 `src/CutMap.App/bin/Release/net8.0-windows/win-x64/`（自包含，
+产物在 `cutmap/src/CutMap.App/bin/Release/net8.0-windows/win-x64/`（从仓库根目录计；自包含，
 用户机器不需要装 .NET 运行时）。
 
 发布两种形态：
@@ -201,9 +201,9 @@ CutMap.Cli verify <dir> # 校验已有瓦片集能否被 Cesium 加载
 - **`ctb-tile` 失败时退出码是 0**：源码里 `catch (CTBException)` 之后照样
   `return 0`。所以本软件以 **stderr** 判成败，并把实际瓦片数与预期对账。
 - **暂停只有下载支持**：切片、拼接、打包没有可插等待点的循环（PRD OUT-07）。
-- **不要用中文做文件名**。软件产出过 `重庆市_dem.tif`，ctb-tile 直接报
-  `could not open GDAL dataset`——路径经过控制台时会被按本地代码页转成乱码。
-  现在一律用行政区代码（`dem_156500000.tif`）。
+- **含中文路径的切片已兼容**。`ctb-tile` 的原生 argv 解析会把中文路径转坏；
+  程序在调用前自动映射输入与输出到临时 ASCII 别名，完成后清理别名，不会改动原路径。
+  直接手工调用 `ctb-tile.exe` 时仍应避免中文路径。
 - **真实行政边界可能自相交**，GDAL 会拒绝当 cutline。程序会自动做拓扑修复
   （`MakeValid` + 挑出多边形部分）；修不好时**退回原几何让 GDAL 报错**，
   而不是静默换一个形状——裁剪范围不能悄悄变。
@@ -239,8 +239,10 @@ CutMap.Cli verify <dir> # 校验已有瓦片集能否被 Cesium 加载
 - GDAL / .NET：MIT；CTB：Apache License 2.0（见随包 CTB-LICENSE.txt）
 - **Copernicus DEM GLO-30**：分发产物时须注明出处
   （`Contains modified Copernicus DEM GLO-30 data, © ESA / European Commission`）
-- **行政区划数据**：来源为天地图时，随产物分发须注明数据来源
-# 0.1.3 本轮验收状态
+- **行政区划数据**：当前随软件分发的数据源为 **DataV.GeoAtlas**；请按
+  `THIRD-PARTY-NOTICES.txt` 的 DataV 署名要求分发。
+
+## 10. 0.1.3 验收状态
 
 本版修复 CTB 重采样参数未传递与不必要的分段切片开销；25 点 Cesium 三角插值复验最大绝对误差为 0.2692 米，三次全量性能复测的包装层中位数开销为 -5.87%。绿色包与当前用户范围安装包均已完成自包含、安装、启动和卸载验证。边界数据按用户批准采用 DataV，版本及校验值见 `resources/boundary-manifest.json`。
 

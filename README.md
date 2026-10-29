@@ -87,6 +87,7 @@ D:\Map\
 │                    完整的基线留档见 git 历史，说明见 docs\基线运行说明.md
 │
 ├── docs\            项目文档（见上方「文档索引」）
+├── outputs\         已归档的验收说明与可追溯证据（受版本控制）
 ├── CHANGELOG.md     版本历史、验收结论、已知问题
 ├── .editorconfig    代码与格式约定（换行由 .gitattributes 管，两处不重复）
 │
@@ -94,6 +95,25 @@ D:\Map\
 ├── serve.py         本地静态服务器——**查看瓦片必须用它**，见下
 └── terrain_viewer.html   三维预览页（含自检面板）
 ```
+
+---
+
+## 文件管理与安全清理
+
+仓库以“是否能可靠重建、是否仍是唯一证据”为准，而不是以文件大小或是否被 Git
+忽略为准。以下边界与 `.gitignore` 保持一致：
+
+| 类别 | 位置 | 处理方式 |
+|---|---|---|
+| 必须保留 | `cutmap/`、`ctb/`、`resources/`、`baseline/`、`docs/`、`outputs/`、`viewer/`、前端源码和根目录说明 | 源码、运行依赖、基线、正式文档或有效验收证据；不得按名称或扩展名批量清理。 |
+| 可重建产物 | `cutmap/**/bin/`、`cutmap/**/obj/`、`data/`、`dist/`、`cutmap/_gate/`、`cutmap/_gen/`、`logs/`、`output/`、`work/` | 默认不提交；清理前仍须确认没有唯一的发布包、问题复现材料或验收证据。构建目录可由 `dotnet build cutmap/CutMap.sln -c Release` 重建，发布物可由 `pack-*.ps1` 重建。 |
+| 本机缓存 | `__pycache__/`、`.playwright-cli/`、编辑器目录 | 可再生成；只删除未被验收文档或排障记录引用的条目。 |
+| 待人工确认 | 根目录的 `_memtest*`、`_memcap*`、`_ovr_*`、`_split_test*`，以及来源不明的大型数据 | 这些可能是性能、覆盖或分片复现材料；即使未跟踪也不得自动删除。 |
+
+日常整理先运行 `git status --short` 确认用户修改，再用
+`git check-ignore -v <路径>` 确认生成规则。不要使用 `git clean -fdx`，也不要把
+“已忽略”等同于“可以立即删除”。临时验收结果应先提炼必要结论到现有正式文档或
+`outputs/`，再决定是否移除原始中间文件。
 
 ---
 
@@ -165,11 +185,11 @@ cd D:/Map && python serve.py --port 8080
 
 ## 许可
 
-> ⚠ **本项目的授权方式尚未确定。** 仓库里目前没有 `LICENSE` 文件——
-> 企业对接、二次分发前请先与项目负责人确认授权。
-> 下面是**第三方组件与数据**的许可，那些与项目自身的授权是两回事。
+本仓库包含 [Apache License 2.0](LICENSE)。第三方组件与数据的单独声明见
+[cutmap/THIRD-PARTY-NOTICES.txt](cutmap/THIRD-PARTY-NOTICES.txt)；分发时仍须遵守
+其中对 DEM 与行政区划数据的署名要求。
 
-见 [cutmap/THIRD-PARTY-NOTICES.txt](cutmap/THIRD-PARTY-NOTICES.txt)。要点：
+要点：
 
 - GDAL / .NET：MIT；CTB：Apache License 2.0（见随包 CTB-LICENSE.txt）
 - **Copernicus DEM GLO-30**：分发产物时须注明出处
